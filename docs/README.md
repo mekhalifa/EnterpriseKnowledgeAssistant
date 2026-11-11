@@ -32,6 +32,17 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0005](adr/0005-central-package-management.md) | Central Package Management + pinned SDK | Accepted |
 | [0006](adr/0006-package-source-mapping.md) | NuGet pinned to nuget.org with source mapping | Accepted |
 
+## Project skills
+
+Repeatable workflows, checked in at [`.claude/skills/`](../.claude/skills/) so everyone
+working in this repository gets them.
+
+| Skill | Purpose |
+|---|---|
+| [`next-step`](../.claude/skills/next-step/SKILL.md) | Run the next step of the learning path end to end |
+| [`new-adr`](../.claude/skills/new-adr/SKILL.md) | Record an architecture decision, with index updates |
+| [`verify`](../.claude/skills/verify/SKILL.md) | The quality gate, plus this repo's known failure modes |
+
 ## Concepts — the reference material
 
 | Document | Topic |

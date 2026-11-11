@@ -100,3 +100,18 @@ dotnet ef database update --project src/EKA.Infrastructure --startup-project src
 | [docs/steps/](docs/steps/) | Full teaching write-up for each completed step |
 | [docs/adr/](docs/adr/) | Architecture Decision Records — what we chose and why |
 | [docs/concepts/](docs/concepts/) | Reference material: Clean Architecture, DDD, SOLID, patterns |
+| [.claude/skills/](.claude/skills/) | Project skills — the repeatable workflows below |
+
+## Project skills
+
+Checked in under `.claude/skills/`, so they are shared by anyone working in this repo.
+Each one's body loads only when invoked, which keeps the always-loaded context small.
+
+| Skill | Use it when |
+|---|---|
+| `next-step` | Starting the next step of the learning path — "go", "next", "start step N" |
+| `new-adr` | A non-trivial technical choice was made and needs recording |
+| `verify` | Checking the build, or before committing a step |
+
+The `next-step` skill carries the full working rhythm (orient → teach → build → verify →
+document → commit), so that detail does not need to sit in this file.

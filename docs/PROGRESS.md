@@ -43,6 +43,18 @@ Reference: [concepts/ddd.md](concepts/ddd.md), [concepts/solid.md](concepts/soli
 - Ran `/doctor`: installation healthy, single npm-global install, settings parse clean,
   Claude Code 2.1.322 is current. No changes applied.
 
+#### Project skills (`.claude/skills/`)
+
+- `next-step` — run the next learning step end to end: orient from PROGRESS.md, teach with
+  the why/best/alternatives format, build, verify, write the step doc, update the tracker,
+  commit.
+- `new-adr` — create a numbered ADR from the template and update both index tables.
+- `verify` — the quality gate, plus this repository's known failure modes (NU1507, NU1008,
+  architecture test failures, SDK mismatch).
+
+No `.claude/settings.json` yet — the useful contents would be permission allow-rules, and
+the owner has chosen to approve actions individually.
+
 #### Documentation
 
 - `CLAUDE.md` with the scope constraint, architecture rules, and conventions.
