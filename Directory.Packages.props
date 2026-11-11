@@ -1,0 +1,48 @@
+<Project>
+
+  <!--
+    Central Package Management (CPM).
+
+    Every NuGet version in this repository is declared HERE, exactly once.
+    Projects reference packages WITHOUT a version attribute:
+
+        <PackageReference Include="xunit" />
+
+    Why: across eleven projects, per-project versions drift. EKA.Api ends up on
+    Serilog 4.1 while EKA.Infrastructure is on 4.3, and the symptom is a confusing
+    binding error that costs hours to trace. With CPM an upgrade is a one-line diff.
+
+    See docs/adr/0005-central-package-management.md
+  -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="ASP.NET Core">
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
+  </ItemGroup>
+
+  <ItemGroup Label="Hosting and configuration">
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
+  </ItemGroup>
+
+  <ItemGroup Label="Testing">
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+  </ItemGroup>
+
+  <!--
+    Added as the roadmap reaches them, so the dependency surface stays honest:
+      Step 3  Microsoft.EntityFrameworkCore.SqlServer, .Design, Testcontainers.MsSql
+      Step 4  FluentValidation.DependencyInjectionExtensions
+      Step 5  Microsoft.Extensions.AI, .AI.OpenAI, Azure.AI.OpenAI,
+              Microsoft.Extensions.Http.Resilience
+      Step 7  Hangfire.AspNetCore, Hangfire.SqlServer
+      Step 8  Qdrant.Client
+      Step 14 Serilog.AspNetCore, OpenTelemetry.Extensions.Hosting
+  -->
+
+</Project>

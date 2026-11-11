@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/EKA.AI/EKA.AI.csproj" />
+    <Project Path="src/EKA.Api/EKA.Api.csproj" />
+    <Project Path="src/EKA.Application/EKA.Application.csproj" />
+    <Project Path="src/EKA.Contracts/EKA.Contracts.csproj" />
+    <Project Path="src/EKA.Domain/EKA.Domain.csproj" />
+    <Project Path="src/EKA.Infrastructure/EKA.Infrastructure.csproj" />
+    <Project Path="src/EKA.Ingestion.Worker/EKA.Ingestion.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/EKA.AI.Tests/EKA.AI.Tests.csproj" />
+    <Project Path="tests/EKA.Application.Tests/EKA.Application.Tests.csproj" />
+    <Project Path="tests/EKA.Domain.Tests/EKA.Domain.Tests.csproj" />
+    <Project Path="tests/EKA.IntegrationTests/EKA.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

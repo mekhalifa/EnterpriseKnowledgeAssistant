@@ -1,0 +1,45 @@
+# Normalize line endings.
+#
+# Without this, a file written with LF on one machine and CRLF on another produces a
+# diff where EVERY line changed, which buries real changes and makes `git blame`
+# useless. `text=auto` stores everything as LF in the repository and checks out the
+# platform's native ending in the working tree.
+
+* text=auto
+
+# Files that must keep a specific ending regardless of platform.
+*.sh            text eol=lf
+*.bash          text eol=lf
+Dockerfile      text eol=lf
+*.cmd           text eol=crlf
+*.bat           text eol=crlf
+*.ps1           text eol=crlf
+
+# Explicitly textual, so diffs and merges behave.
+*.cs            text diff=csharp
+*.csproj        text
+*.slnx          text
+*.props         text
+*.targets       text
+*.json          text
+*.md            text
+*.yml           text
+*.yaml          text
+*.config        text
+*.ts            text
+*.html          text
+*.css           text
+
+# Binary: never diff, never normalize.
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.docx          binary
+*.xlsx          binary
+*.zip           binary
+*.dll           binary
+*.exe           binary
+*.snk           binary

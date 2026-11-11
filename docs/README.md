@@ -1,0 +1,44 @@
+# EKA Documentation
+
+Reference library for the Enterprise Knowledge Assistant. Everything explained during
+development is written down here so it can be re-read instead of re-asked.
+
+## Start here
+
+| Document | What it answers |
+|---|---|
+| [PROGRESS.md](PROGRESS.md) | What is done, what I am doing next |
+| [00-learning-path.md](00-learning-path.md) | The 14 steps from empty folder to deployed MVP |
+
+## Steps — the teaching write-ups
+
+Each step document records what we built, why, the best option, and the alternatives.
+
+| Step | Document | Status |
+|---|---|---|
+| 1 | [step-01-solution-skeleton.md](steps/step-01-solution-skeleton.md) | Written |
+| 2–14 | *created as we reach them* | — |
+
+## ADRs — the decisions
+
+Short records of each architectural decision, its consequences, and what we rejected.
+
+| ADR | Decision | Status |
+|---|---|---|
+| [0001](adr/0001-modular-monolith.md) | Modular monolith, not microservices | Accepted |
+| [0002](adr/0002-clean-architecture-layering.md) | Clean Architecture layering, 7 projects | Accepted |
+| [0003](adr/0003-minimal-apis.md) | Minimal APIs, not MVC controllers | Accepted |
+| [0004](adr/0004-separate-ingestion-worker.md) | Ingestion runs as a separate process | Accepted |
+| [0005](adr/0005-central-package-management.md) | Central Package Management + pinned SDK | Accepted |
+| [0006](adr/0006-package-source-mapping.md) | NuGet pinned to nuget.org with source mapping | Accepted |
+
+## Concepts — the reference material
+
+| Document | Topic |
+|---|---|
+| [clean-architecture.md](concepts/clean-architecture.md) | Layers, the dependency rule, what goes where |
+| [ddd.md](concepts/ddd.md) | Domain-Driven Design: bounded contexts, entities, value objects, aggregates |
+| [solid.md](concepts/solid.md) | The five SOLID principles, with examples from this codebase |
+| [design-patterns.md](concepts/design-patterns.md) | Every pattern this project uses, and why |
+| [minimal-apis-vs-controllers.md](concepts/minimal-apis-vs-controllers.md) | The API style comparison |
+| [glossary.md](concepts/glossary.md) | RAG, embedding, chunk, top-K, ACL, idempotency, and friends |

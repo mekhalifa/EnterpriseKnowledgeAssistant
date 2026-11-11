@@ -1,0 +1,33 @@
+<Project>
+
+  <!--
+    Shared MSBuild properties inherited by EVERY project in this repository.
+    Imported before each .csproj, so an individual project can still override
+    anything here if it genuinely needs to.
+
+    Why this file exists: without it, each new project repeats these settings and
+    someone eventually forgets one. Nullable reference types disabled on a single
+    project is the kind of gap nobody notices until it causes a null bug.
+  -->
+
+  <PropertyGroup Label="Target">
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Language safety">
+    <!-- Nullable reference types: the compiler tracks what can be null. -->
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Warnings that are allowed to accumulate are warnings nobody reads. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup Label="Build quality">
+    <!-- Same inputs produce byte-identical outputs: required for reproducible CI. -->
+    <Deterministic>true</Deterministic>
+    <!-- Surface the real source path in stack traces from CI builds. -->
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+</Project>
