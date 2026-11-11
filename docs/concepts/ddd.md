@@ -42,10 +42,25 @@ deployable — this is a modular monolith, see [ADR-0001](../adr/0001-modular-mo
 ┌────────────────────┐   access decision     ┌────────────────────┐
 │  IDENTITY & ACCESS │ ────────────────────► │   CONVERSATION     │
 │ User, Role,        │                       │ Conversation,      │
-│ DocumentAcl,       │                       │ Message, Citation, │
-│ Tenant             │                       │ PromptTemplate     │
-└────────────────────┘                       └────────────────────┘
+│ DocumentAcl,       │                       │ Message, Citation  │
+│ Tenant             │                       │                    │
+└────────────────────┘                       └─────────┬──────────┘
+                                                        │ which prompt, which model
+                                                        ▼
+                                              ┌────────────────────┐
+                                              │ PROMPTING          │
+                                              │ PromptTemplate,    │
+                                              │ AIProvider         │
+                                              └────────────────────┘
 ```
+
+As built in Step 2, these map to folders under `src/EKA.Domain/`:
+`Ingestion/`, `Retrieval/`, `Conversations/`, `Identity/`, `Prompting/`, `Providers/`, and
+`Common/` for the cross-context value objects (`TenantId`, `TokenCount`) and base types.
+
+`DocumentAcl` is **not** built yet — document-level permissions arrive with
+access-filtered retrieval in Step 9. Until then, tenant and owner scoping are the only
+access boundaries in the model.
 
 **Why this matters more than usual here:** Identity & Access is an *upstream* context that
 Retrieval must consult on every query. Modelling it as its own boundary with an explicit
@@ -202,6 +217,7 @@ the filter be a guaranteed part of the query. See
 | **Event sourcing** | Storing every state change as an event log is a large commitment for audit value we can get from an audit table |
 | **Full CQRS with separate read/write databases** | Our read load is vector search, which already lives in Qdrant — a second relational read model adds sync complexity for nothing |
 | **A mediator library (MediatR) from day one** | Handlers injected directly are simpler and traceable; add a mediator only when cross-cutting pipeline behaviours justify it |
+| **An `IClock` abstraction in the domain** | Domain methods take the instant as a parameter instead — one operation, one timestamp, and nothing to register or fake. See [ADR-0008](../adr/0008-deterministic-time-in-domain.md) |
 | **Specification pattern everywhere** | Used in Step 9 for composable ACL filters, where it genuinely pays; not as a general query mechanism |
 | **One microservice per bounded context** | See [ADR-0001](../adr/0001-modular-monolith.md) — boundaries are enforced by projects and folders, not by the network |
 

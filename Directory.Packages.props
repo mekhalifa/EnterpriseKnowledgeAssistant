@@ -12,6 +12,9 @@
     Serilog 4.1 while EKA.Infrastructure is on 4.3, and the symptom is a confusing
     binding error that costs hours to trace. With CPM an upgrade is a one-line diff.
 
+    NOTE: `dotnet add package` appends to whichever ItemGroup it finds first and
+    strips blank lines. After running it, move the entry to the right group by hand.
+
     See docs/adr/0005-central-package-management.md
   -->
 
@@ -32,6 +35,9 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <!-- Shouldly, not FluentAssertions: v8+ of the latter needs a paid commercial
+         licence. See docs/adr/0007-assertion-library.md -->
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
   </ItemGroup>
 
   <!--

@@ -69,11 +69,16 @@ Details: [docs/concepts/clean-architecture.md](docs/concepts/clean-architecture.
   Never put a `Version=` attribute in a `.csproj`.
 - Domain entities protect their invariants in the constructor; no public setters.
 - Prefer the **Result pattern** over exceptions for expected failures (validation, not found).
-- Tests: xUnit; one test project per production layer. Each layer's test project
-  guards its own architectural boundary. **Assertion library is an open decision** —
-  FluentAssertions v8+ requires a paid commercial licence, so the candidates are plain
-  `Assert`, Shouldly (MIT), or AwesomeAssertions (MIT fork of FluentAssertions 7).
-  Decide at Step 2; see [docs/PROGRESS.md](docs/PROGRESS.md).
+- Tests: xUnit + **Shouldly** ([ADR-0007](docs/adr/0007-assertion-library.md) — not
+  FluentAssertions, whose v8+ needs a paid commercial licence). One test project per
+  production layer; each guards its own architectural boundary. Name tests after the rule
+  they protect, not the method they call.
+- **The domain never reads the clock.** Every domain method that records an instant takes
+  `DateTimeOffset` as a parameter; the application layer supplies it from
+  `TimeProvider.System`. See [ADR-0008](docs/adr/0008-deterministic-time-in-domain.md).
+- Value objects: `readonly record struct` only where `default` is a legitimate value;
+  `sealed record` when the payload must be non-null, because a struct's implicit
+  parameterless constructor bypasses validation.
 - NuGet: packages resolve from nuget.org only, enforced by package source mapping in
   `nuget.config`. Adding a private feed means mapping it to its own ID prefix —
   never map `*` to two sources. See [ADR-0006](docs/adr/0006-package-source-mapping.md).

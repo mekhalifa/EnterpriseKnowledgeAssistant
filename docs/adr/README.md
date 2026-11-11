@@ -31,6 +31,9 @@ useful as the current belief.
 | [0003](0003-minimal-apis.md) | Minimal APIs instead of MVC controllers | Accepted | 2026-11-11 |
 | [0004](0004-separate-ingestion-worker.md) | Ingestion as a separate process | Accepted | 2026-11-11 |
 | [0005](0005-central-package-management.md) | Central Package Management and a pinned SDK | Accepted | 2026-11-11 |
+| [0006](0006-package-source-mapping.md) | Pin NuGet to nuget.org with package source mapping | Accepted | 2026-11-11 |
+| [0007](0007-assertion-library.md) | Shouldly for test assertions | Accepted | 2026-11-11 |
+| [0008](0008-deterministic-time-in-domain.md) | The domain never reads the clock | Accepted | 2026-11-11 |
 
 ## Template
 

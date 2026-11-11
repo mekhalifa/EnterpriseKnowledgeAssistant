@@ -16,8 +16,9 @@ Each step document records what we built, why, the best option, and the alternat
 
 | Step | Document | Status |
 |---|---|---|
-| 1 | [step-01-solution-skeleton.md](steps/step-01-solution-skeleton.md) | Written |
-| 2–14 | *created as we reach them* | — |
+| 1 | [step-01-solution-skeleton.md](steps/step-01-solution-skeleton.md) | ✅ Complete |
+| 2 | [step-02-domain-model.md](steps/step-02-domain-model.md) | ✅ Complete |
+| 3–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -31,6 +32,8 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0004](adr/0004-separate-ingestion-worker.md) | Ingestion runs as a separate process | Accepted |
 | [0005](adr/0005-central-package-management.md) | Central Package Management + pinned SDK | Accepted |
 | [0006](adr/0006-package-source-mapping.md) | NuGet pinned to nuget.org with source mapping | Accepted |
+| [0007](adr/0007-assertion-library.md) | Shouldly for test assertions | Accepted |
+| [0008](adr/0008-deterministic-time-in-domain.md) | The domain never reads the clock | Accepted |
 
 ## Project skills
 
