@@ -25,6 +25,25 @@ namespace EKA.Domain.Conversations;
 /// </remarks>
 public sealed record Citation
 {
+    /// <summary>
+    /// EF Core materialization only.
+    /// </summary>
+    /// <remarks>
+    /// Required because EF cannot bind an <b>owned type</b> to a constructor parameter, and
+    /// <see cref="PageRange"/> is one. Without a parameterless constructor EF fails model
+    /// building outright with "no suitable constructor was found". With it, EF constructs
+    /// the instance and writes each mapped property through its backing field — the same
+    /// mechanism every entity in this model already relies on.
+    /// <para>
+    /// <see cref="DocumentTitle"/> is initialised here only to satisfy nullable reference
+    /// analysis; EF overwrites it immediately with the stored value.
+    /// </para>
+    /// </remarks>
+    private Citation()
+    {
+        DocumentTitle = string.Empty;
+    }
+
     public Citation(
         Guid documentId,
         string documentTitle,

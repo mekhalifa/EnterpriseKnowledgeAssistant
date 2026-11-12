@@ -1,10 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
+    <UserSecretsId>eka-api-6f3b2a10-5d41-4c8e-9a77-21b0c9e4d5f3</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <!--
+      EF Core tooling, needed here because EKA.Api is the startup project that
+      `dotnet ef` builds to discover the DbContext and its configuration.
+      PrivateAssets="all" keeps design-time tooling out of the published output.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

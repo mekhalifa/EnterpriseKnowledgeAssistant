@@ -12,22 +12,50 @@
     Serilog 4.1 while EKA.Infrastructure is on 4.3, and the symptom is a confusing
     binding error that costs hours to trace. With CPM an upgrade is a one-line diff.
 
-    NOTE: `dotnet add package` appends to whichever ItemGroup it finds first and
-    strips blank lines. After running it, move the entry to the right group by hand.
+    TWO THINGS LEARNED THE HARD WAY (see docs/steps/step-03-persistence.md):
+
+    1. `dotnet add package` resolves the LATEST version, which is 11.0.x for the
+       Microsoft families — and 11.0.x targets net11.0 only, so it fails NU1202
+       against our net10.0. Add new Microsoft packages with an explicit version
+       flag pinning 10.0.x, or edit this file by hand.
+
+    2. `dotnet add package` also appends to whichever ItemGroup it finds first
+       (regardless of label) and strips blank lines. Move the entry afterwards.
+
+    3. An XML comment may not contain two consecutive hyphens. Writing a CLI
+       flag such as the long form of "version" inside a comment here makes this
+       file unloadable, and MSBuild then reports NU1015 ("no version specified")
+       on every project rather than a parse error — a thoroughly misleading
+       symptom for a one-character mistake.
 
     See docs/adr/0005-central-package-management.md
   -->
 
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!--
+      One version line for the whole Microsoft 10.x family. Mixing 10.0.14 and
+      10.0.15 across projects is precisely the drift CPM exists to prevent, so the
+      version lives in this property and every Microsoft package below references it.
+    -->
+    <MicrosoftRuntimeVersion>10.0.15</MicrosoftRuntimeVersion>
   </PropertyGroup>
 
   <ItemGroup Label="ASP.NET Core">
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="$(MicrosoftRuntimeVersion)" />
   </ItemGroup>
 
   <ItemGroup Label="Hosting and configuration">
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="$(MicrosoftRuntimeVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
+  </ItemGroup>
+
+  <ItemGroup Label="Persistence">
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="$(MicrosoftRuntimeVersion)" />
+    <!-- Design is tooling only: PrivateAssets="all" keeps it out of published output. -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="$(MicrosoftRuntimeVersion)" />
   </ItemGroup>
 
   <ItemGroup Label="Testing">
@@ -38,11 +66,14 @@
     <!-- Shouldly, not FluentAssertions: v8+ of the latter needs a paid commercial
          licence. See docs/adr/0007-assertion-library.md -->
     <PackageVersion Include="Shouldly" Version="4.3.0" />
+    <!-- Real SQL Server in a throwaway container per test run, rather than a
+         sqlite/in-memory stand-in that would not catch the index and constraint
+         behaviour this step depends on. -->
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.16.0" />
   </ItemGroup>
 
   <!--
     Added as the roadmap reaches them, so the dependency surface stays honest:
-      Step 3  Microsoft.EntityFrameworkCore.SqlServer, .Design, Testcontainers.MsSql
       Step 4  FluentValidation.DependencyInjectionExtensions
       Step 5  Microsoft.Extensions.AI, .AI.OpenAI, Azure.AI.OpenAI,
               Microsoft.Extensions.Http.Resilience

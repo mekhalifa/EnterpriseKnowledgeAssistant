@@ -88,13 +88,23 @@ Details: [docs/concepts/clean-architecture.md](docs/concepts/clean-architecture.
 ## Common commands
 
 ```powershell
-dotnet build                        # build the solution
-dotnet test                         # run all tests
-dotnet format                       # apply style rules
-docker compose -f deploy/docker-compose.yml up -d    # local dependencies
-dotnet ef migrations add <Name> --project src/EKA.Infrastructure --startup-project src/EKA.Api
-dotnet ef database update --project src/EKA.Infrastructure --startup-project src/EKA.Api
+dotnet build                        # build the solution (warnings are errors)
+dotnet test                         # all tests; integration needs Docker running
+dotnet tool restore                 # restore dotnet-ef, pinned in .config/dotnet-tools.json
+
+# Local SQL Server. Requires deploy/.env (copy deploy/.env.example first).
+docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.yml down       # add -v to drop the data volume
+
+# EF Core. `dotnet dotnet-ef` because the tool is local, not global.
+dotnet dotnet-ef migrations add <Name> --project src/EKA.Infrastructure --startup-project src/EKA.Api --output-dir Persistence/Migrations
+$env:EKA_MIGRATIONS_CONNECTION = "<connection string>"
+dotnet dotnet-ef database update --project src/EKA.Infrastructure --startup-project src/EKA.Api
 ```
+
+**Adding a Microsoft NuGet package:** pin it to the 10.0.x line. `dotnet add package`
+resolves the latest, which is 11.0.x and targets `net11.0` only — it fails with NU1202.
+Versions live in `Directory.Packages.props` under `$(MicrosoftRuntimeVersion)`.
 
 ## Documentation map
 

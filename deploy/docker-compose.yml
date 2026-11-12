@@ -1,0 +1,61 @@
+# Local development dependencies for the Enterprise Knowledge Assistant.
+#
+# Step 3 brings up SQL Server only. Qdrant arrives in Step 8, Redis in Step 12, and the
+# API and worker containers in Step 14 — each added when something actually uses it, so
+# `docker compose up` never starts services that do nothing.
+#
+# Usage:
+#   cd deploy
+#   cp .env.example .env        # then edit MSSQL_SA_PASSWORD
+#   docker compose up -d
+#   docker compose ps           # wait for "healthy"
+#
+# The README flagged the previous compose file as a P0 blocker: it used a non-existent
+# Dockerfile for the database and LocalDB from inside a Linux container. This uses the
+# official image instead.
+
+name: eka
+
+services:
+  sqlserver:
+    # Official Microsoft image. The earlier attempt built SQL Server from a local
+    # Dockerfile, which cannot work — and LocalDB is Windows-only, so it is unreachable
+    # from a Linux container regardless.
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: eka-sqlserver
+    restart: unless-stopped
+    environment:
+      # Accepting the EULA is mandatory; the container refuses to start without it.
+      ACCEPT_EULA: "Y"
+      # No default and no fallback: the password comes from .env, which is gitignored.
+      # A compose file with a committed password is a compose file that ends up in
+      # production with that password.
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD must be set in deploy/.env}
+      MSSQL_PID: Developer
+    ports:
+      # Bound to localhost only. Without the 127.0.0.1 prefix Docker publishes on every
+      # interface, which on a laptop means the database is reachable from the coffee-shop
+      # wifi.
+      - "127.0.0.1:1433:1433"
+    volumes:
+      # Named volume, not a bind mount: SQL Server needs specific ownership on its data
+      # directory, and a host bind mount produces permission errors that look like
+      # corruption.
+      - eka-sqldata:/var/opt/mssql
+    healthcheck:
+      # The API and the migration step must wait for SQL Server to accept logins, not
+      # merely for the process to exist. SQL Server takes tens of seconds to become
+      # ready, and "container started" is not "database available".
+      test:
+        - CMD-SHELL
+        - /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -No -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # Failures during this window do not count against `retries`, which keeps a slow
+      # first boot from being reported as unhealthy.
+      start_period: 40s
+
+volumes:
+  eka-sqldata:
+    name: eka-sqldata

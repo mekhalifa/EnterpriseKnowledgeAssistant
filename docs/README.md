@@ -18,7 +18,8 @@ Each step document records what we built, why, the best option, and the alternat
 |---|---|---|
 | 1 | [step-01-solution-skeleton.md](steps/step-01-solution-skeleton.md) | ✅ Complete |
 | 2 | [step-02-domain-model.md](steps/step-02-domain-model.md) | ✅ Complete |
-| 3–14 | *created as we reach them* | — |
+| 3 | [step-03-persistence.md](steps/step-03-persistence.md) | ✅ Complete |
+| 4–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -34,6 +35,8 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0006](adr/0006-package-source-mapping.md) | NuGet pinned to nuget.org with source mapping | Accepted |
 | [0007](adr/0007-assertion-library.md) | Shouldly for test assertions | Accepted |
 | [0008](adr/0008-deterministic-time-in-domain.md) | The domain never reads the clock | Accepted |
+| [0009](adr/0009-repository-per-aggregate.md) | Repository per aggregate, tenant-scoped methods | Accepted |
+| [0010](adr/0010-value-object-mapping.md) | Converters for single values, owned types for composites | Accepted |
 
 ## Project skills
 

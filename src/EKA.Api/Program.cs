@@ -1,12 +1,41 @@
+using EKA.Api.Security;
+using EKA.Application.Abstractions;
+using EKA.Infrastructure;
+
+// ─────────────────────────────────────────────────────────────────────────────────────
+// Composition root.
+//
+// This is the only project that knows which implementation satisfies which interface.
+// Everything else depends on abstractions declared in EKA.Application.
+//
+// Step 3 wires persistence only. Endpoints, validation, ProblemDetails error handling and
+// health checks arrive in Step 4 — so this API currently serves no routes, which is
+// expected and recorded in docs/PROGRESS.md.
+// ─────────────────────────────────────────────────────────────────────────────────────
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+// Required by HttpContextCurrentUser. Registered explicitly rather than relied upon as a
+// side effect of some other call.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
+
+// Throws at startup if the connection string is missing, which is deliberate: a
+// misconfiguration found by a user is a misconfiguration found too late.
+//
+// Set it locally with User Secrets so it never reaches a committed file:
+//   dotnet user-secrets --project src/EKA.Api set \
+//     "ConnectionStrings:EkaDatabase" \
+//     "Server=localhost,1433;Database=EnterpriseKnowledgeAssistant;User Id=sa;Password=<your password>;TrustServerCertificate=True"
+//
+// In containers it comes from the environment variable
+// ConnectionStrings__EkaDatabase, and in production from Key Vault.
+builder.Services.AddInfrastructure(builder.Configuration);
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -14,28 +43,4 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

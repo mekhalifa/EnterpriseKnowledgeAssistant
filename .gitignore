@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Local container credentials (see deploy/.env.example)
+deploy/.env
+
