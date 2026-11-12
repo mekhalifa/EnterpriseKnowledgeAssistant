@@ -1,4 +1,5 @@
 using EKA.Application.Abstractions;
+using EKA.Application.Common;
 using EKA.Infrastructure.Persistence;
 using EKA.Infrastructure.Persistence.Interceptors;
 using EKA.Infrastructure.Persistence.Repositories;
@@ -27,6 +28,7 @@ public static class DependencyInjection
 {
     /// <summary>Configuration key holding the SQL Server connection string.</summary>
     public const string ConnectionStringName = "EkaDatabase";
+
 
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
@@ -73,6 +75,18 @@ public static class DependencyInjection
         // repository writes and its commit are one transaction.
         services.AddScoped<IUnitOfWork>(
             serviceProvider => serviceProvider.GetRequiredService<EkaDbContext>());
+
+        // The readiness probe. Registered here because this is the layer that knows the
+        // application talks to SQL Server at all — EKA.Api asks "are you ready", not "can
+        // you reach the database". AddDbContextCheck opens a connection and runs
+        // CanConnectAsync, so it fails on a dead server, a wrong password and an
+        // unreachable network alike, which is exactly the set of faults that should take
+        // an instance out of the load balancer.
+        //
+        // The tag is what /health/ready filters on; an untagged check would run on neither
+        // probe and quietly never execute.
+        services.AddHealthChecks()
+            .AddDbContextCheck<EkaDbContext>(name: "sql-server", tags: [HealthTags.Ready]);
 
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IConversationRepository, ConversationRepository>();

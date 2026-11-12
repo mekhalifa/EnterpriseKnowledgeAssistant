@@ -1,4 +1,5 @@
 using EKA.Application.Abstractions;
+using EKA.Application.Common;
 using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
 using Microsoft.EntityFrameworkCore;
@@ -89,6 +90,41 @@ internal sealed class DocumentRepository : IDocumentRepository
             .OrderByDescending(document => document.CreatedAt)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
+    public async Task<PagedResult<Document>> ListAsync(
+        TenantId tenantId,
+        IngestionStatus? status,
+        int skip,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        // Built once and reused for both the count and the page, so the two cannot drift
+        // apart as the filter grows. The tenant predicate is applied before anything else
+        // and is not optional.
+        var query = _context.Documents.Where(document => document.TenantId == tenantId);
+
+        if (status is not null)
+        {
+            query = query.Where(document => document.Status == status);
+        }
+
+        // Counted first, in the same request, so "437 documents" and the rows on the page
+        // come from one consistent read of the table.
+        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+
+        var items = await query
+            // Id is the tie-breaker: two documents registered in the same millisecond
+            // would otherwise order non-deterministically, and a row can then appear on
+            // two consecutive pages or on neither.
+            .OrderByDescending(document => document.CreatedAt)
+            .ThenBy(document => document.Id)
+            .Skip(skip)
+            .Take(take)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return new PagedResult<Document>(items, totalCount);
+    }
 
     public void Add(Document document) => _context.Documents.Add(document);
 

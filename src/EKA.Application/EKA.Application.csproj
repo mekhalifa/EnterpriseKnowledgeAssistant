@@ -1,11 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <!--
+      Both are vocabulary packages, not infrastructure: they define interfaces
+      (IServiceCollection, IValidator) and carry no database, HTTP or AI provider with
+      them. The boundary test in tests/EKA.Application.Tests guards the real rule, which is
+      that EF Core, ASP.NET Core, Qdrant and Hangfire never appear here.
+    -->
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\EKA.Domain\EKA.Domain.csproj" />
     <ProjectReference Include="..\EKA.Contracts\EKA.Contracts.csproj" />
   </ItemGroup>
-
-  <PropertyGroup>
-  </PropertyGroup>
 
 </Project>

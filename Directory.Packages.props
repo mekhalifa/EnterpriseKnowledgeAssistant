@@ -45,6 +45,23 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="$(MicrosoftRuntimeVersion)" />
   </ItemGroup>
 
+  <ItemGroup Label="Validation">
+    <!--
+      NOT on the Microsoft version line: FluentValidation ships on its own cadence and
+      targets netstandard2.0, so 12.x runs on net10.0 without a 12-for-10 mismatch.
+      Apache-2.0 and free, unlike FluentAssertions v8+ (see ADR-0007) - the two libraries
+      share a naming style and nothing else.
+      The DependencyInjectionExtensions package pulls in FluentValidation itself, so the
+      core package is not listed separately.
+    -->
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.2.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Diagnostics">
+    <!-- Readiness probe backed by a real query against the configured database. -->
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="$(MicrosoftRuntimeVersion)" />
+  </ItemGroup>
+
   <ItemGroup Label="Hosting and configuration">
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="$(MicrosoftRuntimeVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
@@ -70,6 +87,16 @@
          sqlite/in-memory stand-in that would not catch the index and constraint
          behaviour this step depends on. -->
     <PackageVersion Include="Testcontainers.MsSql" Version="4.16.0" />
+    <!-- WebApplicationFactory: boots the real Program.cs in-process, so endpoint tests
+         exercise the actual middleware pipeline rather than a hand-assembled imitation. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="$(MicrosoftRuntimeVersion)" />
+    <!--
+      Microsoft.Extensions.TimeProvider.Testing is deliberately NOT referenced. TimeProvider
+      is an abstract class with two virtual members, so a fixed-clock test double is ten
+      lines (tests/EKA.Application.Tests/Fakes/FixedTimeProvider.cs). A package on a
+      different version line than the rest of the Microsoft family, for ten lines, is a
+      standing upgrade hazard in exchange for nothing.
+    -->
   </ItemGroup>
 
   <!--

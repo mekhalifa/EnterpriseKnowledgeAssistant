@@ -68,7 +68,17 @@ Details: [docs/concepts/clean-architecture.md](docs/concepts/clean-architecture.
 - Package versions live **only** in `Directory.Packages.props` (Central Package Management).
   Never put a `Version=` attribute in a `.csproj`.
 - Domain entities protect their invariants in the constructor; no public setters.
-- Prefer the **Result pattern** over exceptions for expected failures (validation, not found).
+- Prefer the **Result pattern** over exceptions for expected failures (validation, not
+  found). Two exceptions survive and the API maps both:
+  `InvalidStateTransitionException` → 409, `DomainException` → 500. A handler must **never**
+  pre-check a lifecycle transition — that duplicates the aggregate's state machine.
+  See [ADR-0011](docs/adr/0011-result-pattern.md).
+- Use cases are **vertical slices** (one folder per use case) with handlers injected
+  directly — no mediator ([ADR-0012](docs/adr/0012-vertical-slices-no-mediator.md)).
+  Commands carry `TenantId` from the authenticated caller, never from a request body.
+- Validation splits in three: shape at the edge via a FluentValidation endpoint filter,
+  stateful rules in the handler as a `Result`, invariants in the domain as a throw. A
+  validator never performs I/O ([ADR-0013](docs/adr/0013-validation-placement.md)).
 - Tests: xUnit + **Shouldly** ([ADR-0007](docs/adr/0007-assertion-library.md) — not
   FluentAssertions, whose v8+ needs a paid commercial licence). One test project per
   production layer; each guards its own architectural boundary. Name tests after the rule
@@ -90,6 +100,11 @@ Details: [docs/concepts/clean-architecture.md](docs/concepts/clean-architecture.
 ```powershell
 dotnet build                        # build the solution (warnings are errors)
 dotnet test                         # all tests; integration needs Docker running
+
+# Call the API locally. Until Step 12 wires an identity provider, the tenant comes from a
+# header read by a Development-only authentication scheme (ADR-0014). Omit the header and
+# a configured default tenant is used.
+curl http://localhost:5000/api/documents -H "X-EKA-Tenant: 11111111-1111-1111-1111-111111111111"
 dotnet tool restore                 # restore dotnet-ef, pinned in .config/dotnet-tools.json
 
 # Local SQL Server. Requires deploy/.env (copy deploy/.env.example first).

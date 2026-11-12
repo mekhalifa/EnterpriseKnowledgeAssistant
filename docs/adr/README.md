@@ -36,6 +36,10 @@ useful as the current belief.
 | [0008](0008-deterministic-time-in-domain.md) | The domain never reads the clock | Accepted | 2026-11-11 |
 | [0009](0009-repository-per-aggregate.md) | A repository per aggregate root, with tenant-scoped methods | Accepted | 2026-11-12 |
 | [0010](0010-value-object-mapping.md) | Converters for single-value objects, owned types for composites | Accepted | 2026-11-12 |
+| [0011](0011-result-pattern.md) | Result for expected failures, exceptions for broken rules | Accepted | 2026-11-12 |
+| [0012](0012-vertical-slices-no-mediator.md) | Vertical slices with direct handler injection, no mediator | Accepted | 2026-11-12 |
+| [0013](0013-validation-placement.md) | Shape validation at the edge, stateful rules in the handler | Accepted | 2026-11-12 |
+| [0014](0014-development-authentication.md) | A development authentication scheme until an identity provider exists | Accepted | 2026-11-12 |
 
 ## Template
 

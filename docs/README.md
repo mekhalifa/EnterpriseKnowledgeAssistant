@@ -19,7 +19,8 @@ Each step document records what we built, why, the best option, and the alternat
 | 1 | [step-01-solution-skeleton.md](steps/step-01-solution-skeleton.md) | ✅ Complete |
 | 2 | [step-02-domain-model.md](steps/step-02-domain-model.md) | ✅ Complete |
 | 3 | [step-03-persistence.md](steps/step-03-persistence.md) | ✅ Complete |
-| 4–14 | *created as we reach them* | — |
+| 4 | [step-04-application-api.md](steps/step-04-application-api.md) | ✅ Complete |
+| 5–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -37,6 +38,10 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0008](adr/0008-deterministic-time-in-domain.md) | The domain never reads the clock | Accepted |
 | [0009](adr/0009-repository-per-aggregate.md) | Repository per aggregate, tenant-scoped methods | Accepted |
 | [0010](adr/0010-value-object-mapping.md) | Converters for single values, owned types for composites | Accepted |
+| [0011](adr/0011-result-pattern.md) | Result for expected failures, exceptions for broken rules | Accepted |
+| [0012](adr/0012-vertical-slices-no-mediator.md) | Vertical slices, direct handler injection, no mediator | Accepted |
+| [0013](adr/0013-validation-placement.md) | Shape validation at the edge, stateful rules in the handler | Accepted |
+| [0014](adr/0014-development-authentication.md) | A development authentication scheme until Step 12 | Accepted |
 
 ## Project skills
 

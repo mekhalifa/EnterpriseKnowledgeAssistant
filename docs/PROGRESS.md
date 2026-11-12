@@ -3,36 +3,40 @@
 Single source of truth for project state. Updated at the end of every working session.
 
 **Last updated:** 2026-11-12
-**Current step:** Step 3 complete → Step 4 next
-**Overall:** Phase A, 3 of 14 steps complete
-**Branch:** `step-03-persistence` (branched from `step-02-domain-model`; neither merged to `main`)
+**Current step:** Step 4 complete → Step 5 next
+**Overall:** Phase A complete, 4 of 14 steps done
+**Branch:** `step-04-application-api` (branched from `step-03-persistence`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**Step 4 — application layer and the API surface.**
+**Step 5 — AI providers through Microsoft.Extensions.AI.**
 
-1. `Result<T>` and `Error` in `EKA.Application`, with an `ErrorType` enum
-   (Validation / NotFound / Conflict / Forbidden / Provider).
-2. Use cases as vertical slices — one folder per feature under
-   `EKA.Application/Documents/…`, `Conversations/…`, each with Command, Handler, Validator.
-3. FluentValidation wired as a minimal-API endpoint filter.
-4. Endpoint groups in `EKA.Api/Endpoints/`, one static class per feature, registered with a
-   single `Map…Endpoints()` call each.
-5. **ProblemDetails mapping** — including `InvalidStateTransitionException` → HTTP 409,
-   which Step 2 designed for and nothing has exercised yet.
-6. Health checks: liveness (`/health/live`) and readiness (`/health/ready`, checks SQL
-   Server). The API currently serves **no routes at all**.
-7. `EKA.Contracts` DTOs; never return domain entities from an endpoint.
-8. `.editorconfig` — deferred twice, and there is now real code to write rules against.
-9. Tests in `EKA.Application.Tests` using fake repositories (no database).
+1. `IChatCompletionService` and an embedding abstraction declared in `EKA.Application`;
+   implemented in `EKA.AI` over `Microsoft.Extensions.AI`. **No provider SDK type may
+   appear in `EKA.Application`** — the boundary test already guards this.
+2. Register `IChatClient` and `IEmbeddingGenerator` for the chosen provider; Factory or
+   keyed services for provider selection, so `AIProvider` rows mean something.
+3. Secrets from User Secrets locally (`Ai:OpenAi:ApiKey`), environment variables in
+   containers. Never `appsettings.json`.
+4. Options pattern with `ValidateOnStart()` for model names, endpoints and dimensions — a
+   wrong embedding dimension must stop the app, not produce garbage vectors.
+5. Resilience pipeline via `Microsoft.Extensions.Http.Resilience`: timeout, retry with
+   jittered backoff, and a circuit breaker. Decorator/middleware shape.
+6. `ErrorType.Provider` → 502 already exists and nothing has used it yet.
+7. A smoke test proving one chat call and one embedding call succeed, skippable without a
+   key configured — and a unit test of the resilience behaviour that needs no key.
 
-**Decision needed first:** none blocking. Open: whether to adopt a mediator — recommend
-**not** yet; inject handlers directly until cross-cutting pipeline behaviour justifies one.
+**Decisions needed first — both blocking, settle before coding:**
 
-Reference: [concepts/minimal-apis-vs-controllers.md](concepts/minimal-apis-vs-controllers.md),
-[concepts/design-patterns.md](concepts/design-patterns.md#result).
+| Decision | Recommendation |
+|---|---|
+| Primary provider | **Azure OpenAI** if an Azure subscription is available (private networking, data-residency commitments, enterprise agreement); **OpenAI direct** otherwise, which is faster to start and needs no Azure resource. The abstraction makes this cheap to change; the *configuration shape* is not. |
+| Embedding model + dimension | **`text-embedding-3-small` at 1536 dimensions** unless retrieval quality in Step 11 says otherwise. This fixes the Qdrant collection shape in Step 8 and changing it later forces a full re-index. `AIProvider.EmbeddingDimensions` already records it per provider. |
+
+Reference: [concepts/design-patterns.md](concepts/design-patterns.md) (Adapter, Strategy,
+Decorator, Options), [adr/0002](adr/0002-clean-architecture-layering.md).
 
 ---
 
@@ -109,6 +113,45 @@ Reference: [concepts/minimal-apis-vs-controllers.md](concepts/minimal-apis-vs-co
    tracked, and only reaches the database constraint when it is not. The test now asserts
    both layers.
 
+#### Step 4 — application layer and API surface ✅
+
+- `Result` / `Result<T>` / `Error` / `ErrorType`; one `ErrorType` → HTTP status map in
+  `ErrorResults`; `Error.Code` rides along as a ProblemDetails extension member.
+- Six document use cases as vertical slices (Register, Get, List, Rename, Reset, Delete),
+  each `Command/Query + Handler (+ Validator)`. Handlers registered by hand; validators
+  scanned for.
+- **Seven endpoints**, plus `/health/live` and `/health/ready`. `EKA.Contracts` DTOs only;
+  no domain entity crosses an endpoint.
+- `IDocumentRepository.ListAsync` added for paged, tenant-scoped listing returning items
+  and total from one consistent read.
+- **Development authentication scheme** behind three gates, so the tenant comes from an
+  authenticated principal and never from request content. `NoIdentityProviderHandler`
+  answers 401 when it is off, instead of 500.
+- `.editorconfig` written, including deliberate `none` for RCS1194 and RCS1170 with the
+  reasons recorded — the IDE annoyance tracked since Step 2 is resolved.
+- **322 tests** (78 application, 63 integration of which 18 are end-to-end over HTTP).
+- Decided: [ADR-0011](adr/0011-result-pattern.md) Result vs exceptions;
+  [ADR-0012](adr/0012-vertical-slices-no-mediator.md) slices, no mediator;
+  [ADR-0013](adr/0013-validation-placement.md) validation placement;
+  [ADR-0014](adr/0014-development-authentication.md) development authentication.
+
+**Scope deliberately narrowed, and why:** Conversation endpoints were *not* built. Step 6's
+exit criterion is "a client creates a conversation, asks a question, and reads back
+persisted messages", so they belong there. Document upload of actual bytes is Step 7.
+
+**Two things went wrong, both recorded in
+[step-04](steps/step-04-application-api.md):**
+
+1. **`app.UseExceptionHandler()` silently converted a correct 400 into a 500** for malformed
+   JSON, across every endpoint at once. `BadHttpRequestException` already carries a 400;
+   once an exception handler is registered, the unclaimed exception falls through to the
+   fallback, which writes 500. Fixed with `BadRequestExceptionHandler` registered first.
+   **Only an end-to-end test could have found this.**
+2. `WebApplicationFactory.ConfigureAppConfiguration` runs *after* `Program.cs` has already
+   read `builder.Configuration`, so 18 tests failed on the application's own "connection
+   string is not configured" guard while plainly configuring one. `UseSetting` writes into
+   host configuration, which is present early enough.
+
 ---
 
 ## Step checklist
@@ -118,8 +161,8 @@ Reference: [concepts/minimal-apis-vs-controllers.md](concepts/minimal-apis-vs-co
 | 1 | Solution skeleton + architecture decision | ✅ Complete — 19 tests |
 | 2 | Domain model | ✅ Complete — 191 tests |
 | 3 | Persistence: EF Core + SQL Server in Docker | ✅ Complete — 233 tests |
-| 4 | Application layer + API surface | ⬜ Next |
-| 5 | AI providers via Microsoft.Extensions.AI | ⬜ Not started |
+| 4 | Application layer + API surface | ✅ Complete — 322 tests |
+| 5 | AI providers via Microsoft.Extensions.AI | ⬜ Next |
 | 6 | Prompt templates + chat API | ⬜ Not started |
 | 7 | Document ingestion | ⬜ Not started |
 | 8 | Chunking + embeddings | ⬜ Not started |
@@ -136,10 +179,11 @@ Reference: [concepts/minimal-apis-vs-controllers.md](concepts/minimal-apis-vs-co
 
 | When | Decision | Options |
 |---|---|---|
-| Step 4 | Mediator or direct handler injection | **Direct injection** recommended; add MediatR only when cross-cutting pipeline behaviour justifies it |
-| Step 5 | Primary AI provider | Azure OpenAI (enterprise, private networking) vs OpenAI direct |
-| Step 5 | Embedding model + dimension | Fixes the Qdrant collection shape. `AIProvider.EmbeddingDimensions` already records it per provider |
+| Step 5 | **Primary AI provider** — blocking | Azure OpenAI (enterprise, private networking) vs OpenAI direct. Recommendation in the next-action block above |
+| Step 5 | **Embedding model + dimension** — blocking | Fixes the Qdrant collection shape in Step 8; changing it later forces a full re-index. `AIProvider.EmbeddingDimensions` records it per provider |
+| Step 6 | Conversation endpoints | Deferred from Step 4 on purpose; they need a local user id, which needs just-in-time user provisioning from the identity provider's subject claim |
 | Step 7 | Background job engine | Hangfire (SQL-backed, dashboard) vs a queue |
+| Step 7 | Unique index on `(TenantId, ContentHash)` | Closes the registration race left open in Step 4. Natural to add with the real upload path |
 | Step 7 | File storage | Local disk / Azure Blob / S3-compatible (MinIO) |
 | Step 9 | Hybrid search | Dense-only first; add BM25 only if Step 11 shows a gap |
 | Step 9 | ACL model | `DocumentAcl` deliberately not built — designed with access-filtered retrieval |
@@ -152,7 +196,7 @@ Reference: [concepts/minimal-apis-vs-controllers.md](concepts/minimal-apis-vs-co
 
 | Risk | Why it matters | Mitigation |
 |---|---|---|
-| ACL leak through retrieval | The worst failure mode — one user reading another's documents | Tenant filter inside every repository method (ADR-0009); vector-query filtering in Step 9; security tests in Step 12 |
+| ACL leak through retrieval | The worst failure mode — one user reading another's documents | Tenant filter inside every repository method (ADR-0009); **proved across HTTP in Step 4** by two-tenant end-to-end tests; vector-query filtering in Step 9; security tests in Step 12 |
 | Embedding dimension change | Forces a full re-index | Recorded per provider and per chunk, so stale vectors are identifiable |
 | Prompt injection via document content | Uploaded documents are untrusted input | `MessageRole` is a trust boundary; tested in Step 10 |
 | Provider cost runaway | Embedding large corpora gets expensive fast | Token budgets, caching, rate limits in Step 12 |
@@ -168,18 +212,36 @@ Reference: [concepts/minimal-apis-vs-controllers.md](concepts/minimal-apis-vs-co
 | Chunk indexes unique per document | `UX_DocumentChunks_DocumentId_ChunkIndex` | ✅ Created and tested |
 | At most one active prompt template per name | `UX_PromptTemplates_Name_Active`, filtered `[IsActive] = 1` | ✅ Created and tested |
 | `default(TenantId)` must never persist | `IsEmpty` check in every aggregate constructor + non-nullable column | ✅ Both halves done |
+| Same bytes registered once per tenant | Content-hash lookup in `RegisterDocumentHandler` | ⚠️ Handler half done; the unique index that closes the race is Step 7 |
 
 ---
 
 ## Known limitations of the current code
 
-- **The API serves no routes.** Step 3 wired persistence only; endpoints, validation,
-  ProblemDetails and health checks arrive in Step 4.
+- **Authentication is a development stand-in.** `DevelopmentHeader` trusts request headers
+  and authenticates nobody. Three gates keep it in Development (default-false flag,
+  `IsDevelopment()` check, startup throw elsewhere), and the third is asserted by reading
+  the code rather than by a test. Deleted, not disabled, in Step 12
+  ([ADR-0014](adr/0014-development-authentication.md)).
+- **`appsettings.Development.json` ships with the scheme enabled**, so a developer who
+  renames their environment hits the startup throw. That is the designed behaviour, but it
+  is a surprise worth knowing about in advance.
+- **Registering a document races itself.** Two concurrent registrations of identical bytes
+  can both miss the content-hash check and both insert. Cost today is a wasted row, not a
+  correctness failure. Closed by a unique index on `(TenantId, ContentHash)` in Step 7.
+- **Deleting a document removes the row and nothing else.** The stored file and the vectors
+  do not exist yet; Step 8 owns making deletion complete.
+- **No conversation endpoints.** Deferred to Step 6 deliberately — see the decision table.
+- **`ListAsync` uses offset paging**, so a deep page scans and discards, and an insert
+  between two requests can shift a row across a page boundary. Correct for a page-numbered
+  UI; revisit if a tenant's document count reaches the thousands.
+- **`.editorconfig` does not gate the build.** `EnforceCodeStyleInBuild` is off on purpose
+  (see step-04 §9); `dotnet format --verify-no-changes` becomes a CI step in Step 14.
 - **`LoggingDomainEventDispatcher` invokes no handlers.** It logs each event so the wiring
   is visibly working and visibly incomplete. Real handlers arrive in Step 7.
-- **Audit columns carry no real attribution yet.** No identity provider is configured until
-  Step 12, so `ICurrentUser` returns null and every write is stamped `"system"`.
-- **No `.editorconfig`.** Deferred twice; scheduled for Step 4.
+- **Audit columns carry no real attribution yet.** The development scheme supplies a
+  subject id, so writes are stamped `"dev-user"` rather than `"system"` — still not a real
+  identity until Step 12.
 - Architecture tests use `Assembly.GetReferencedAssemblies()`, which the compiler trims to
   references compiled code actually uses.
 - `DocumentAcl` / document-level permissions are not modelled — Step 9.

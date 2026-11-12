@@ -17,6 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      Only EKA.Application, on purpose. The boundary tests in this project assert that the
+      application layer references no outer layer, and they can only be trusted if this
+      project cannot see one either. EKA.Domain and EKA.Contracts come through
+      transitively, which is correct: they are inner layers.
+    -->
     <ProjectReference Include="..\..\src\EKA.Application\EKA.Application.csproj" />
   </ItemGroup>
 

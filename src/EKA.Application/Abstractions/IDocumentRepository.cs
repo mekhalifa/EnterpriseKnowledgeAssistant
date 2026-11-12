@@ -1,3 +1,4 @@
+using EKA.Application.Common;
 using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
 
@@ -57,6 +58,34 @@ public interface IDocumentRepository
     Task<IReadOnlyList<Document>> GetByStatusAsync(
         TenantId tenantId,
         IngestionStatus status,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// One page of a tenant's documents, newest first, optionally narrowed to a single
+    /// ingestion status.
+    /// </summary>
+    /// <param name="tenantId">The owning tenant. Applied inside the query.</param>
+    /// <param name="status">Filter to one status, or null for all of them.</param>
+    /// <param name="skip">Rows to skip. Computed by the caller from page and page size.</param>
+    /// <param name="take">Maximum rows to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <remarks>
+    /// <para>
+    /// Returns the total alongside the page because a paged UI needs both and running two
+    /// round trips from the handler would mean the count and the page could disagree about
+    /// which rows exist.
+    /// </para>
+    /// <para>
+    /// <see cref="GetByStatusAsync"/> survives alongside this because the ingestion worker
+    /// wants every document in a status, not a page of them, and a method named for that
+    /// intent is clearer at the call site than <c>ListAsync(tenant, status, 0, int.MaxValue)</c>.
+    /// </para>
+    /// </remarks>
+    Task<PagedResult<Document>> ListAsync(
+        TenantId tenantId,
+        IngestionStatus? status,
+        int skip,
+        int take,
         CancellationToken cancellationToken = default);
 
     void Add(Document document);
