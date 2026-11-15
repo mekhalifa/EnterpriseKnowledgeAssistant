@@ -1,3 +1,4 @@
+using FluentValidation;
 using EKA.Api.Errors;
 using EKA.Api.Filters;
 using EKA.Api.Security;
@@ -5,9 +6,12 @@ using EKA.Application.Abstractions;
 using EKA.Application.Documents.DeleteDocument;
 using EKA.Application.Documents.GetDocument;
 using EKA.Application.Documents.ListDocuments;
-using EKA.Application.Documents.RegisterDocument;
 using EKA.Application.Documents.RenameDocument;
 using EKA.Application.Documents.ResetDocument;
+using EKA.Application.Documents.UploadDocument;
+using EKA.Application.Documents.Ingestion;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using EKA.Contracts.Common;
 using EKA.Contracts.Documents;
 
@@ -46,12 +50,25 @@ internal static class DocumentEndpoints
             .WithTags("Documents")
             .RequireAuthorization(TenantPolicy.Name);
 
-        documents.MapPost("/", RegisterAsync)
-            .WithName("RegisterDocument")
-            .WithSummary("Registers a document's metadata for ingestion.")
-            .WithValidation<RegisterDocumentRequest>()
+        var maxUploadBytes = app.ServiceProvider.GetRequiredService<IOptions<IngestionOptions>>().Value.MaxUploadBytes;
+
+        documents.MapPost("/", UploadAsync)
+            .WithName("UploadDocument")
+            .WithSummary("Uploads a file for ingestion. The same bytes uploaded twice return the first document.")
+            .Accepts<UploadDocumentMetadata>("multipart/form-data")
+            .ProducesValidationProblem()
+            // The server cuts the body off once it passes this size, while it is still
+            // streaming in, answering 413 before the file is ever buffered whole. The
+            // allowance above MaxUploadBytes covers multipart boundaries and form fields. The
+            // file's own size is enforced exactly by the use case (document.file_too_large).
+            .WithMetadata(new RequestSizeLimitAttribute(maxUploadBytes + MultipartOverheadBytes))
+            // Antiforgery protects cookie-authenticated browser forms. This API authenticates
+            // every request explicitly, so a cross-site page cannot submit as the user, and a
+            // token would protect nothing. Revisit if Step 13's client uses cookies.
+            .DisableAntiforgery()
             .Produces<DocumentResponse>(StatusCodes.Status201Created)
-            .Produces<DocumentResponse>(StatusCodes.Status200OK);
+            .Produces<DocumentResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
 
         documents.MapGet("/{documentId:guid}", GetAsync)
             .WithName("GetDocument")
@@ -88,20 +105,54 @@ internal static class DocumentEndpoints
         return app;
     }
 
+    /// <summary>Room for multipart framing and the small form fields around the file.</summary>
+    private const long MultipartOverheadBytes = 64 * 1024;
+
     /// <remarks>
-    /// <b>201 or 200, and why the difference is worth the extra line.</b> Registering bytes
-    /// that were already registered is not an error — it is a retry doing its job — so it
-    /// must not be a 409. But answering 201 Created for something that was not created
-    /// would mislead any client that counts creations. 200 with the existing document is
-    /// the truthful answer, and the <c>Location</c> header is correct either way.
+    /// <para>
+    /// <b>201 or 200, and why the difference is worth the extra line.</b> Uploading bytes
+    /// that are already registered is not an error. It is a retry doing its job, so it must
+    /// not be a 409. But answering 201 Created for something that was not created would
+    /// mislead any client that counts creations. 200 with the existing document is the
+    /// truthful answer.
+    /// </para>
+    /// <para>
+    /// <b>Why this endpoint validates inline instead of using <c>WithValidation</c>.</b> The
+    /// filter finds its request among the endpoint's arguments, and it treats a missing one
+    /// as "no body" (the right call for JSON). A <c>[FromForm]</c> record binds to null when
+    /// the optional fields are simply absent, so the filter rejected every upload that sent
+    /// a file and nothing else (step-07 §5.3). The two fields are therefore bound as plain
+    /// optional parameters, and the same validator runs here. The rules stay in one place
+    /// (<c>UploadDocumentMetadataValidator</c>); only who calls them differs.
+    /// </para>
     /// </remarks>
-    private static async Task<IResult> RegisterAsync(
-        RegisterDocumentRequest request,
-        RegisterDocumentHandler handler,
+    private static async Task<IResult> UploadAsync(
+        IFormFile file,
+        [FromForm] string? title,
+        [FromForm] int? authority,
+        IValidator<UploadDocumentMetadata> validator,
+        UploadDocumentHandler handler,
         ICurrentUser currentUser,
         CancellationToken cancellationToken)
     {
-        var command = RegisterDocumentCommand.From(request, currentUser.RequireTenantId());
+        var metadata = new UploadDocumentMetadata(title, authority);
+
+        var validation = await validator.ValidateAsync(metadata, cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
+        {
+            return TypedResults.ValidationProblem(validation.ToDictionary());
+        }
+
+        // OpenReadStream over ASP.NET Core's buffered form file is seekable, which the handler
+        // requires: it reads the header to detect the type, then rewinds.
+        await using var content = file.OpenReadStream();
+
+        var command = new UploadDocumentCommand(
+            currentUser.RequireTenantId(),
+            file.FileName,
+            content,
+            metadata.Title,
+            metadata.Authority);
 
         var result = await handler.HandleAsync(command, cancellationToken).ConfigureAwait(false);
 

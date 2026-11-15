@@ -75,11 +75,16 @@ internal sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
                 .IsUnicode(false)
                 .IsRequired();
 
-            // Supports the idempotency check: the same bytes uploaded twice must not
-            // become two indexed documents. Not unique — a tenant legitimately re-uploads
-            // after a Reset, and two tenants may hold the same file.
-            file.HasIndex(metadata => metadata.ContentHash)
-                .HasDatabaseName("IX_Documents_ContentHash");
+            // The idempotency index is UX_Documents_TenantId_ContentHash, UNIQUE, and it is
+            // deliberately NOT declared here. EF Core cannot express an index spanning an
+            // owner's property (TenantId) and an owned type's property (ContentHash), even
+            // though both live in the same table. It is created by hand in migration
+            // DocumentUploadAndIngestion. Because the model never declares it, no future
+            // migration will try to drop it. Its existence is pinned by SchemaMigrationTests.
+            //
+            // It replaced Step 3's non-unique IX_Documents_ContentHash, whose comment argued
+            // that a re-upload after Reset needs a second row. It does not: Reset reuses the
+            // same row, and TenantId separates tenants.
         });
 
         builder.Navigation(document => document.File).IsRequired();

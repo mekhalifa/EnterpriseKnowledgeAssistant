@@ -50,8 +50,18 @@ public interface IDocumentRepository
         string contentHash,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Documents awaiting processing, oldest first, for the ingestion worker.</summary>
+    /// <summary>
+    /// Documents still Pending that were last touched before <paramref name="olderThan"/>,
+    /// oldest first: the stalled-document sweep's input.
+    /// </summary>
+    /// <remarks>
+    /// <b>Deliberately not tenant-scoped,</b> the one exception to ADR-0009: it serves a
+    /// system job that works across every tenant. Its only caller reads ids from the result
+    /// and hands each one to a tenant-scoped job, so no tenant's data reaches another
+    /// tenant's request. Never call it from a request handler.
+    /// </remarks>
     Task<IReadOnlyList<Document>> GetPendingIngestionAsync(
+        DateTimeOffset olderThan,
         int limit,
         CancellationToken cancellationToken = default);
 

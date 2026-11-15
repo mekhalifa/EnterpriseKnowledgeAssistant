@@ -72,10 +72,14 @@ internal sealed class DocumentRepository : IDocumentRepository
     /// steady stream of uploads cannot starve an earlier document.
     /// </remarks>
     public async Task<IReadOnlyList<Document>> GetPendingIngestionAsync(
+        DateTimeOffset olderThan,
         int limit,
         CancellationToken cancellationToken = default) =>
         await _context.Documents
-            .Where(document => document.Status == IngestionStatus.Pending)
+            // ModifiedAt, falling back to CreatedAt: a document Reset to Pending has an old
+            // CreatedAt and must not be swept the instant it is reset.
+            .Where(document => document.Status == IngestionStatus.Pending
+                               && (document.ModifiedAt ?? document.CreatedAt) < olderThan)
             .OrderBy(document => document.CreatedAt)
             .Take(limit)
             .ToListAsync(cancellationToken)

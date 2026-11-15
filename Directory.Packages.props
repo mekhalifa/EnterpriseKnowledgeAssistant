@@ -34,6 +34,14 @@
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!--
+      Transitive pinning: a PackageVersion below also overrides the version of that package
+      when it arrives INDIRECTLY. Needed since Step 7: Hangfire.Core asks for Newtonsoft.Json
+      >= 11.0.1, NuGet resolves the lowest version satisfying a range, and 11.0.1 carries
+      GHSA-5crp-9r3c-p9vr (high severity). NuGet audit + TreatWarningsAsErrors failed the
+      build on it (NU1903), which is that setting earning its keep.
+    -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <!--
       One version line for the whole Microsoft 10.x family. Mixing 10.0.14 and
       10.0.15 across projects is precisely the drift CPM exists to prevent, so the
       version lives in this property and every Microsoft package below references it.
@@ -98,6 +106,24 @@
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="$(MicrosoftRuntimeVersion)" />
   </ItemGroup>
 
+  <ItemGroup Label="Ingestion">
+    <!--
+      Hangfire: durable background jobs stored in the same SQL Server (ADR-0020). The API
+      only enqueues (Hangfire.SqlServer + Core); the worker runs the server (Hangfire.NetCore).
+      Hangfire.SqlServer is given a Microsoft.Data.SqlClient connection factory, so the
+      deprecated System.Data.SqlClient never enters the dependency graph.
+      LGPL-3.0, used unmodified as a library, which the licence permits in closed products.
+    -->
+    <PackageVersion Include="Hangfire.Core" Version="1.8.25" />
+    <PackageVersion Include="Hangfire.SqlServer" Version="1.8.25" />
+    <PackageVersion Include="Hangfire.NetCore" Version="1.8.25" />
+    <!-- Transitive only (via Hangfire.Core). Pinned to stay off the vulnerable 11.x floor. -->
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Text extraction, pure .NET (ADR-0022). PdfPig: Apache-2.0. Open XML SDK: MIT. -->
+    <PackageVersion Include="PdfPig" Version="0.1.16" />
+    <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
+  </ItemGroup>
+
   <ItemGroup Label="Persistence">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="$(MicrosoftRuntimeVersion)" />
     <!-- Design is tooling only: PrivateAssets="all" keeps it out of published output. -->
@@ -134,7 +160,6 @@
       Step 5  Microsoft.Extensions.AI, .AI.OpenAI, OpenAI,
               Microsoft.Extensions.Http.Resilience
               (Azure.AI.OpenAI deliberately not yet: see ADR-0015)
-      Step 7  Hangfire.AspNetCore, Hangfire.SqlServer
       Step 8  Qdrant.Client
       Step 14 Serilog.AspNetCore, OpenTelemetry.Extensions.Hosting
   -->

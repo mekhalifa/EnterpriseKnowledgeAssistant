@@ -3,40 +3,43 @@
 Single source of truth for project state. Updated at the end of every working session.
 
 **Last updated:** 2026-11-15
-**Current step:** Step 6 complete → Step 7 next
-**Overall:** Phase B, 6 of 14 steps done
-**Branch:** `step-06-chat-api` (branched from `step-05-ai-providers`; none merged to `main`)
+**Current step:** Step 7 complete → Step 8 next
+**Overall:** Phase B, 7 of 14 steps done
+**Branch:** `step-07-document-ingestion` (branched from `step-06-chat-api`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**Step 7 — Document ingestion.**
-Exit criterion: *uploading a file creates a tracked document and extracts text
-asynchronously.*
+**Step 8 — Chunking and embeddings.**
+Exit criterion: *an ingested document yields ordered chunks and matching vectors;
+re-ingesting the same document is safe.*
 
-**Decisions needed first — all three shape the code:**
+**Decisions needed first:**
 
 | Decision | Options |
 |---|---|
-| Background job engine | Hangfire on SQL Server (dashboard, retries, no new infrastructure) vs a queue (Azure Storage Queue / RabbitMQ) consumed by `EKA.Ingestion.Worker` |
-| File storage | Local disk behind an `IFileStorage` port (simplest) vs Azure Blob vs S3-compatible MinIO in Docker |
-| Text extraction | PdfPig for PDF + OpenXML for DOCX (pure .NET) vs Azure AI Document Intelligence (layout-aware, paid) |
+| Chunking strategy | Token-window with overlap (recommended start: ~500 tokens, ~15% overlap) vs section-aware (split on the artifact's sections, then window) vs semantic |
+| Qdrant point identity | Point id = `DocumentChunk.Id` (idempotent upsert) vs derived from `(DocumentId, ChunkIndex)` |
+| Worker AI key | The worker now needs `AddAi`, hence its own `Ai:ApiKey` in its User Secrets |
 
 Then:
 
-1. `POST /api/documents/upload` (multipart): size and type limits enforced **before** reading
-   the whole body, content hash computed while streaming, stored through `IFileStorage`.
-2. Unique index `(TenantId, ContentHash)` — closes the registration race left in Step 4;
-   a collision becomes "already registered", not a 500.
-3. Hand-off to the worker; the worker drives `BeginExtraction` → `CompleteExtraction` /
-   `Fail` and stores extracted text with page and section metadata.
-4. Domain-event handlers: `LoggingDomainEventDispatcher` gets its first real subscriber.
-5. Chain of Responsibility for the extraction pipeline (detect type → extract → normalize).
-6. **Load → change → save tests** for every new aggregate operation (step-06 §5.1 taught why).
+1. Chunking stage after extraction: read `ExtractedTextStore`, chunk (Strategy pattern),
+   `Document.AddChunks` → Embedding. Page and section metadata carried onto each chunk.
+2. Batched embedding through `IEmbeddingService` with bounded concurrency (backpressure);
+   one failure must not lose the batch's progress.
+3. Qdrant in `deploy/docker-compose.yml`; collection created at 1536 dims, cosine; payload
+   carries **tenant id and document id** so Step 9 can filter before content is returned.
+4. `CompleteIngestion` only after every vector is written; re-ingestion deletes old points
+   first (or upserts by stable id) so a retry never leaves duplicates.
+5. Delete completes: removing a document removes its vectors (the third store, after the
+   row and the files).
+6. Load → change → save tests for every new aggregate operation; a real-Qdrant integration
+   test via Testcontainers.
 
-Reference: [concepts/design-patterns.md](concepts/design-patterns.md) (Chain of
-Responsibility), [adr/0004](adr/0004-separate-ingestion-worker.md).
+Reference: [concepts/design-patterns.md](concepts/design-patterns.md) (Strategy),
+[adr/0023](adr/0023-extracted-text-artifact.md), [adr/0015](adr/0015-openai-compatible-provider.md).
 
 ---
 
@@ -215,6 +218,44 @@ persisted messages", so they belong there. Document upload of actual bytes is St
    caught only by running the real stack.
 5. `localhost` resolves to `::1` here; the SQL container listens on `127.0.0.1` only.
 
+#### Step 7 — Document ingestion ✅
+
+- **Exit criterion met twice:** in-process (real API + real worker composition, joined only
+  by Hangfire) and on the real stack — Kestrel + a separate worker process: Markdown
+  extracted to 3 heading-pathed sections, a corrupt PDF ended Failed with the parser's
+  reason, a duplicate upload returned 200, a 27 MB body got 413 from Kestrel.
+- `POST /api/documents` is now multipart upload, **replacing** Step 4's metadata-only JSON
+  registration (a client-asserted hash was a client-asserted identity).
+- Type detected from bytes; extension must agree; stored content type and hash are the
+  server's. File names reduced to their last segment.
+- Three writes ordered so every crash point is recoverable; best-effort enqueue plus a
+  recurring stalled-document sweep; at-least-once + idempotent (`AwaitsExtraction`,
+  `StartOrResumeExtraction`).
+- Extraction: PdfPig (per page), Open XML (per heading), text/Markdown (per ATX heading);
+  Chain of Responsibility; one normalization; permanent vs transient failures.
+- `UX_Documents_TenantId_ContentHash` (created by hand — EF cannot model it) closes Step
+  4's registration race; `DuplicateKeyException` lets the loser answer 200. Proved by eight
+  concurrent uploads of the same bytes → one document, one file.
+- **429 tests** (+11 domain, +11 application net, +13 integration).
+- Decided: [ADR-0020](adr/0020-hangfire-best-effort-handoff.md) Hangfire + sweep;
+  [ADR-0021](adr/0021-file-storage-port-local-disk.md) storage port;
+  [ADR-0022](adr/0022-pure-dotnet-text-extraction.md) extraction;
+  [ADR-0023](adr/0023-extracted-text-artifact.md) text artifact.
+
+**Found and fixed, all recorded in [step-07](steps/step-07-document-ingestion.md):**
+
+1. **NU1903:** Hangfire's `Newtonsoft.Json >= 11.0.1` floor resolved to a vulnerable version.
+   Fixed with CPM transitive pinning (13.0.4). Caught only because warnings are errors.
+2. **The real worker process could not start** (`ValidateOnBuild`: `AskQuestionHandler` without
+   a chat client), while the in-process test passed with validation disabled. Handlers are
+   now registered per host; the test host validates like production — proved by
+   reintroducing the bug.
+3. `[FromForm]` record bound to null, so the validation filter refused every upload.
+4. The shell collapsed backslashes in scripted edits; one file gained literal control
+   characters. Backslash-bearing text now goes through the editor tools only.
+5. Test fixtures shared one content hash; persistence tests now assert `DuplicateKeyException`
+   and the index name.
+
 ---
 
 ## Step checklist
@@ -227,8 +268,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | 4 | Application layer + API surface | ✅ Complete — 322 tests |
 | 5 | AI providers via Microsoft.Extensions.AI | ✅ Complete — 362 tests |
 | 6 | Prompt templates + chat API | ✅ Complete — 394 tests |
-| 7 | Document ingestion | ⬜ Next |
-| 8 | Chunking + embeddings | ⬜ Not started |
+| 7 | Document ingestion | ✅ Complete — 429 tests |
+| 8 | Chunking + embeddings | ⬜ Next |
 | 9 | Vector retrieval with ACL filtering | ⬜ Not started |
 | 10 | RAG answer generation with citations | ⬜ Not started |
 | 11 | Evaluation | ⬜ Not started |
@@ -242,17 +283,17 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 
 | When | Decision | Options |
 |---|---|---|
-| Step 7 | **Background job engine** — blocking | Hangfire (SQL-backed, dashboard) vs a queue |
-| Step 7 | **File storage** — blocking | Local disk / Azure Blob / S3-compatible (MinIO) |
-| Step 7 | **Text extraction** — blocking | PdfPig + OpenXML (pure .NET) vs Azure AI Document Intelligence |
+| Step 8 | **Chunking strategy** — blocking | Token window + overlap vs section-aware vs semantic; see the next-action block |
+| Step 8 | **Qdrant point identity** — blocking | Chunk id vs derived from (DocumentId, ChunkIndex); decides how re-ingestion avoids duplicates |
 | Before real documents | **Data processor approval** | OpenRouter sees prompts and retrieved text ([ADR-0015](adr/0015-openai-compatible-provider.md)). Fine for learning data; decide before anything sensitive is ingested |
-| Step 7 | Unique index on `(TenantId, ContentHash)` | Closes the registration race left open in Step 4. Natural to add with the real upload path |
 | Step 9 | Hybrid search | Dense-only first; add BM25 only if Step 11 shows a gap |
 | Step 9 | ACL model | `DocumentAcl` deliberately not built — designed with access-filtered retrieval |
 | Step 11 | Persist the prompt template version on each answer | Reported in `AskQuestionResponse` today, not stored; evaluation will need it ([ADR-0019](adr/0019-prompt-templates-seeded-by-migration.md)) |
 | Step 12 | Identity provider | Entra ID vs Keycloak vs ASP.NET Core Identity |
 | Step 12 | EF global query filters | As *defence in depth* on top of explicit tenant parameters, not instead of them — see ADR-0009 |
 | Step 12 | `AIProvider` rows vs `Ai` configuration | The seeded row records what a prompt was written for; configuration chooses what answers. Reconcile or drop the table |
+| Step 14 | Hangfire dashboard | Not wired: mapping it resolves job storage at API startup. Belongs with operations/monitoring, behind authorization |
+| Step 14 | Second storage adapter | Azure Blob vs S3, once the deployment target is chosen ([ADR-0021](adr/0021-file-storage-port-local-disk.md)) |
 
 ---
 
@@ -266,7 +307,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer, client errors never retried (Step 5, tested); token budgets, caching, rate limits in Step 12 |
 | Third-party data path | OpenRouter sits between us and the model vendor | Learning data only until the decision above is made; switching to OpenAI direct or Azure is configuration (ADR-0015) |
 | Scope creep into agents/GraphRAG | Burns the 12 weeks before the basics work | The out-of-scope list in the learning path |
-| Supply chain via NuGet | A malicious package executes at build time | Source mapping (ADR-0006); `packages.lock.json` at Step 14 |
+| Supply chain via NuGet | A malicious package executes at build time | Source mapping (ADR-0006); NuGet audit as errors + transitive pinning (Step 7, caught NU1903); `packages.lock.json` at Step 14 |
+| Untrusted uploads | Parsers are attack surface; files may lie about their type | Type from bytes, extension must agree, size limits in two layers; parsing runs in the worker, not the API (Step 7) |
 
 ---
 
@@ -277,7 +319,7 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | Chunk indexes unique per document | `UX_DocumentChunks_DocumentId_ChunkIndex` | ✅ Created and tested |
 | At most one active prompt template per name | `UX_PromptTemplates_Name_Active`, filtered `[IsActive] = 1` | ✅ Created and tested |
 | `default(TenantId)` must never persist | `IsEmpty` check in every aggregate constructor + non-nullable column | ✅ Both halves done |
-| Same bytes registered once per tenant | Content-hash lookup in `RegisterDocumentHandler` | ⚠️ Handler half done; the unique index that closes the race is Step 7 |
+| Same bytes registered once per tenant | `UX_Documents_TenantId_ContentHash` + lookup in `UploadDocumentHandler` | ✅ Both halves; race proved closed by 8 concurrent uploads (Step 7) |
 | One local user per identity per tenant | `UX_Users_TenantId_ExternalId` | ✅ Created and tested (Step 6; replaced the global index) |
 
 ---
@@ -292,11 +334,18 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 - **`appsettings.Development.json` ships with the scheme enabled**, so a developer who
   renames their environment hits the startup throw. That is the designed behaviour, but it
   is a surprise worth knowing about in advance.
-- **Registering a document races itself.** Two concurrent registrations of identical bytes
-  can both miss the content-hash check and both insert. Cost today is a wasted row, not a
-  correctness failure. Closed by a unique index on `(TenantId, ContentHash)` in Step 7.
-- **Deleting a document removes the row and nothing else.** The stored file and the vectors
-  do not exist yet; Step 8 owns making deletion complete.
+- **Deleting a document removes the row and its files, not yet its vectors** (Step 8).
+- **Exhausted retries leave a document `Extracting`.** After five transient failures the job
+  sits in Hangfire's Failed list; the sweep only re-enqueues `Pending`. Needs a terminal
+  handler that marks the document Failed.
+- **Orphaned files accumulate after crashes** between the file write and the row insert. No
+  reconciliation job yet.
+- **No concurrency token on `Document`.** Two simultaneous deliveries both extract and both
+  save (same result — correct, wasteful).
+- **No OCR and no layout analysis.** Scanned PDFs fail clearly; multi-column pages may
+  extract out of order ([ADR-0022](adr/0022-pure-dotnet-text-extraction.md)).
+- **File storage is single-machine** (local disk). API and worker must share a disk or volume.
+- **Hangfire polls SQL Server once per second** per worker process.
 - **First-contact provisioning races itself.** Two concurrent *first* requests by one person
   both miss the user lookup; the unique index rejects the second as a 500. Safe, not
   invisible; a retry succeeds ([ADR-0017](adr/0017-just-in-time-user-provisioning.md)).
@@ -316,7 +365,9 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 - **`.editorconfig` does not gate the build.** `EnforceCodeStyleInBuild` is off on purpose
   (see step-04 §9); `dotnet format --verify-no-changes` becomes a CI step in Step 14.
 - **`LoggingDomainEventDispatcher` invokes no handlers.** It logs each event so the wiring
-  is visibly working and visibly incomplete. Real handlers arrive in Step 7.
+  is visibly working and visibly incomplete. Step 7 did not need one — ingestion is driven by
+  the job, not by events — so the first subscriber waits for a real consumer (notifications,
+  Step 12/13) rather than being invented.
 - **Audit columns carry no real attribution yet.** The development scheme supplies a
   subject id, so writes are stamped `"dev-user"` rather than `"system"` — still not a real
   identity until Step 12.

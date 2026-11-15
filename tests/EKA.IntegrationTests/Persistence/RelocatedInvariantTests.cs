@@ -1,3 +1,4 @@
+using EKA.Application.Abstractions.Ingestion;
 using EKA.Domain.Ingestion;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
@@ -43,7 +44,8 @@ public sealed class RelocatedInvariantTests
         var act = async () => await context.SaveChangesAsync();
 
         // The database refuses, so a bypassed aggregate cannot corrupt chunk ordering.
-        await Should.ThrowAsync<DbUpdateException>(act);
+        (await Should.ThrowAsync<DuplicateKeyException>(act))
+            .IndexName.ShouldBe("UX_DocumentChunks_DocumentId_ChunkIndex");
     }
 
     [Fact]
@@ -86,7 +88,8 @@ public sealed class RelocatedInvariantTests
 
         // No aggregate can see this: Activate() only knows about itself. The filtered
         // unique index is the only place with a view of all rows.
-        await Should.ThrowAsync<DbUpdateException>(act);
+        (await Should.ThrowAsync<DuplicateKeyException>(act))
+            .IndexName.ShouldBe("UX_PromptTemplates_Name_Active");
     }
 
     [Fact]
@@ -129,8 +132,9 @@ public sealed class RelocatedInvariantTests
         context.PromptTemplates.Add(TestFixtures.NewTemplate(name, 1, provider.Id));
         context.PromptTemplates.Add(TestFixtures.NewTemplate(name, 1, provider.Id));
 
-        await Should.ThrowAsync<DbUpdateException>(
-            async () => await context.SaveChangesAsync());
+        (await Should.ThrowAsync<DuplicateKeyException>(
+            async () => await context.SaveChangesAsync()))
+            .IndexName.ShouldBe("UX_PromptTemplates_Name_Version");
     }
 
     // ── Cascade behaviour ───────────────────────────────────────────────────────────

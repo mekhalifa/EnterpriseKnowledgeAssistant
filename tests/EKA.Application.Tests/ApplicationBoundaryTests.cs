@@ -41,6 +41,10 @@ public sealed class ApplicationBoundaryTests
     [InlineData("Microsoft.Extensions.AI")]
     [InlineData("Microsoft.Extensions.Http")]
     [InlineData("Polly")]
+    // Step 7: the document parsers (PdfPig's assemblies are UglyToad.*) and the Open XML SDK.
+    // Extraction is a port here (ITextExtractor), and its adapters live in Infrastructure.
+    [InlineData("UglyToad")]
+    [InlineData("DocumentFormat")]
     public void Application_does_not_reference_an_infrastructure_package(string forbiddenPrefix)
     {
         var references = Application.GetReferencedAssemblies()

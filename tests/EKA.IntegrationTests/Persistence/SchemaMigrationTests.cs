@@ -63,7 +63,9 @@ public sealed class SchemaMigrationTests
     // Per tenant since Step 6; the global UX_Users_ExternalId was a cross-tenant collision.
     [InlineData("UX_Users_TenantId_ExternalId", "Users", true)]
     [InlineData("UX_AIProviders_Name", "AIProviders", true)]
-    [InlineData("IX_Documents_ContentHash", "Documents", false)]
+    // Step 7: unique per tenant, and created by hand in the migration because EF cannot model
+    // an index across an owner and an owned type. This test is what makes that safe.
+    [InlineData("UX_Documents_TenantId_ContentHash", "Documents", true)]
     [InlineData("IX_Documents_TenantId_Status", "Documents", false)]
     [InlineData("IX_Conversations_TenantId_UserId_ArchivedAt", "Conversations", false)]
     [InlineData("IX_MessageCitations_DocumentId", "MessageCitations", false)]

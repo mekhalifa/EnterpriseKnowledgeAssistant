@@ -43,4 +43,26 @@ internal static class DocumentErrors
     public static Error UnknownStatus(string status) => Error.Validation(
         "document.unknown_status",
         $"'{status}' is not a known ingestion status.");
+
+    public static readonly Error EmptyFile = Error.Validation(
+        "document.empty_file",
+        "The uploaded file is empty.");
+
+    /// <summary>
+    /// The bytes are not a supported format, or they disagree with the file's extension (a
+    /// ZIP named <c>.pdf</c>, a PDF named <c>.docx</c>). The message names the formats
+    /// accepted, not the format detected: telling a caller what we think their file "really"
+    /// is helps nobody but someone probing the detector.
+    /// </summary>
+    public static Error UnsupportedFileType(string fileName) => Error.Validation(
+        "document.unsupported_file_type",
+        $"'{fileName}' is not a supported document. Accepted: PDF (.pdf), Word (.docx), text (.txt), Markdown (.md).");
+
+    /// <remarks>
+    /// Usually rejected earlier by the request-size limit with a bare 413. This is the
+    /// limit enforced by the use case itself, for callers that are not the HTTP endpoint.
+    /// </remarks>
+    public static Error FileTooLarge(long maxBytes) => Error.Validation(
+        "document.file_too_large",
+        $"The file exceeds the {maxBytes / (1024 * 1024)} MB upload limit.");
 }

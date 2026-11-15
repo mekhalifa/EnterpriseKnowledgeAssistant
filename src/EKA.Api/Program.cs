@@ -5,6 +5,7 @@ using EKA.Api.Security;
 using EKA.Application;
 using EKA.Application.Abstractions;
 using EKA.Application.Conversations;
+using EKA.Application.Documents.Ingestion;
 using EKA.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 
@@ -112,12 +113,17 @@ builder.Services.AddAuthorization(options =>
 
 // ── Application and infrastructure ──────────────────────────────────────────────────
 
-builder.Services.AddApplication();
+builder.Services.AddApplication().AddRequestHandlers();
 
 // Prompt budget and template name. Tuning with defaults (see ChatOptions); the rules live
 // in EKA.Application, and this host only says where the values come from.
 builder.Services.AddOptions<ChatOptions>()
     .BindConfiguration(ChatOptions.SectionName)
+    .ValidateOnStart();
+
+// Upload limits and the stalled-document threshold, shared with the worker.
+builder.Services.AddOptions<IngestionOptions>()
+    .BindConfiguration(IngestionOptions.SectionName)
     .ValidateOnStart();
 
 // Throws at startup if the connection string is missing, which is deliberate: a

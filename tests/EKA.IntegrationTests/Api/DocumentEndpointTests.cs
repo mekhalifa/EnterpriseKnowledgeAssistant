@@ -39,22 +39,36 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
 
     private HttpClient NewTenantClient() => _factory.CreateClientFor(Guid.NewGuid());
 
-    private static RegisterDocumentRequest NewRequest(
-        string title = "Employee handbook",
-        string? contentHash = null,
-        int? authority = null) =>
-        new(
-            title,
-            "handbook.pdf",
-            "application/pdf",
-            2048,
-            contentHash ?? RandomHash(),
-            authority);
+    /// <summary>
+    /// A multipart upload of a small text file. The bytes are unique per call unless given,
+    /// so tests never collide on the content-hash idempotency index by accident.
+    /// </summary>
+    internal static MultipartFormDataContent Upload(
+        string? title = "Employee handbook",
+        byte[]? bytes = null,
+        string fileName = "handbook.txt",
+        int? authority = null)
+    {
+        var form = new MultipartFormDataContent();
+        var file = new ByteArrayContent(bytes ?? UniqueText());
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+        form.Add(file, "file", fileName);
 
-    /// <summary>A distinct, well-formed SHA-256 digest per call.</summary>
-    private static string RandomHash() =>
-        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
-            Guid.NewGuid().ToByteArray()));
+        if (title is not null)
+        {
+            form.Add(new StringContent(title), "title");
+        }
+
+        if (authority is not null)
+        {
+            form.Add(new StringContent(authority.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)), "authority");
+        }
+
+        return form;
+    }
+
+    internal static byte[] UniqueText() =>
+        Encoding.UTF8.GetBytes($"Annual leave policy.\nEmployees receive 25 days. Reference {Guid.NewGuid()}.\n");
 
     // ── The happy path ──────────────────────────────────────────────────────────────
 
@@ -63,7 +77,7 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
     {
         var client = NewTenantClient();
 
-        var created = await client.PostAsJsonAsync("/api/documents", NewRequest());
+        var created = await client.PostAsync("/api/documents", Upload());
         created.StatusCode.ShouldBe(HttpStatusCode.Created);
 
         var document = await created.Content.ReadFromJsonAsync<DocumentResponse>();
@@ -95,10 +109,11 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
     public async Task Registering_the_same_bytes_twice_answers_200_not_201()
     {
         var client = NewTenantClient();
-        var request = NewRequest();
+        var bytes = UniqueText();
 
-        var first = await client.PostAsJsonAsync("/api/documents", request);
-        var second = await client.PostAsJsonAsync("/api/documents", request);
+        // Different title and file name, same bytes: identity is the content, not the label.
+        var first = await client.PostAsync("/api/documents", Upload(bytes: bytes));
+        var second = await client.PostAsync("/api/documents", Upload(title: "Same file, renamed", bytes: bytes, fileName: "copy.txt"));
 
         first.StatusCode.ShouldBe(HttpStatusCode.Created);
 
@@ -119,7 +134,7 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
 
         for (var index = 0; index < 5; index++)
         {
-            await client.PostAsJsonAsync("/api/documents", NewRequest(title: $"Doc {index}"));
+            await client.PostAsync("/api/documents", Upload(title: $"Doc {index}"));
         }
 
         var page = await client.GetFromJsonAsync<PagedResponse<DocumentSummaryResponse>>(
@@ -144,7 +159,7 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
         var owner = _factory.CreateClientFor(Guid.NewGuid());
         var intruder = _factory.CreateClientFor(Guid.NewGuid());
 
-        var created = await owner.PostAsJsonAsync("/api/documents", NewRequest());
+        var created = await owner.PostAsync("/api/documents", Upload());
         var document = await created.Content.ReadFromJsonAsync<DocumentResponse>();
 
         var response = await intruder.GetAsync($"/api/documents/{document!.Id}");
@@ -161,7 +176,7 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
         var owner = _factory.CreateClientFor(Guid.NewGuid());
         var intruder = _factory.CreateClientFor(Guid.NewGuid());
 
-        var created = await owner.PostAsJsonAsync("/api/documents", NewRequest());
+        var created = await owner.PostAsync("/api/documents", Upload());
         var document = await created.Content.ReadFromJsonAsync<DocumentResponse>();
 
         var renamed = await intruder.PutAsJsonAsync(
@@ -187,9 +202,9 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
         var first = _factory.CreateClientFor(Guid.NewGuid());
         var second = _factory.CreateClientFor(Guid.NewGuid());
 
-        await first.PostAsJsonAsync("/api/documents", NewRequest(title: "First tenant"));
-        await second.PostAsJsonAsync("/api/documents", NewRequest(title: "Second tenant"));
-        await second.PostAsJsonAsync("/api/documents", NewRequest(title: "Second tenant too"));
+        await first.PostAsync("/api/documents", Upload(title: "First tenant"));
+        await second.PostAsync("/api/documents", Upload(title: "Second tenant"));
+        await second.PostAsync("/api/documents", Upload(title: "Second tenant too"));
 
         var firstPage = await first.GetFromJsonAsync<PagedResponse<DocumentSummaryResponse>>(
             "/api/documents");
@@ -232,16 +247,16 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
     {
         var client = NewTenantClient();
 
-        var response = await client.PostAsJsonAsync(
+        var response = await client.PostAsync(
             "/api/documents",
-            NewRequest(title: "") with { ContentHash = "nope" });
+            Upload(title: new string('x', DocumentTitle.MaxLength + 1), authority: 500));
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
 
         var problem = await ReadProblemAsync(response);
 
         problem.GetProperty("errors").TryGetProperty("Title", out _).ShouldBeTrue();
-        problem.GetProperty("errors").TryGetProperty("ContentHash", out _).ShouldBeTrue();
+        problem.GetProperty("errors").TryGetProperty("Authority.Value", out _).ShouldBeTrue();
     }
 
     [Fact]
@@ -249,7 +264,7 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
     {
         var client = NewTenantClient();
 
-        await client.PostAsJsonAsync("/api/documents", NewRequest(title: ""));
+        await client.PostAsync("/api/documents", Upload(title: new string('x', DocumentTitle.MaxLength + 1)));
 
         var page = await client.GetFromJsonAsync<PagedResponse<DocumentSummaryResponse>>(
             "/api/documents");
@@ -282,7 +297,7 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
     {
         var client = NewTenantClient();
 
-        var created = await client.PostAsJsonAsync("/api/documents", NewRequest());
+        var created = await client.PostAsync("/api/documents", Upload());
         var document = await created.Content.ReadFromJsonAsync<DocumentResponse>();
 
         var response = await client.PostAsync($"/api/documents/{document!.Id}/reset", content: null);
@@ -312,8 +327,9 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
     {
         var client = NewTenantClient();
 
-        var response = await client.PostAsync(
-            "/api/documents",
+        // The rename endpoint: since Step 7 it is the only document route with a JSON body.
+        var response = await client.PutAsync(
+            $"/api/documents/{Guid.NewGuid()}/title",
             new StringContent("{ this is not json", Encoding.UTF8, "application/json"));
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);

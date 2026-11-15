@@ -12,6 +12,9 @@
     <PackageReference Include="Testcontainers.MsSql" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- To GENERATE real PDF and Word files for the ingestion tests, not to read them. -->
+    <PackageReference Include="PdfPig" />
+    <PackageReference Include="DocumentFormat.OpenXml" />
   </ItemGroup>
 
   <ItemGroup>
@@ -21,6 +24,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\EKA.Api\EKA.Api.csproj" />
     <ProjectReference Include="..\..\src\EKA.Infrastructure\EKA.Infrastructure.csproj" />
+    <!-- Boots the real worker composition in-process, next to the real API. -->
+    <ProjectReference Include="..\..\src\EKA.Ingestion.Worker\EKA.Ingestion.Worker.csproj" />
   </ItemGroup>
 
 </Project>

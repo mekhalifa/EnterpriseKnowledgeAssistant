@@ -45,6 +45,10 @@ useful as the current belief.
 | [0017](0017-just-in-time-user-provisioning.md) | Just-in-time user provisioning, unique per tenant | Accepted | 2026-11-15 |
 | [0018](0018-conservative-token-estimation.md) | A conservative token estimate for the prompt budget, exact counts where providers give them | Accepted | 2026-11-15 |
 | [0019](0019-prompt-templates-seeded-by-migration.md) | Prompt template versions ship as migrations | Accepted | 2026-11-15 |
+| [0020](0020-hangfire-best-effort-handoff.md) | Hangfire on SQL Server, with a best-effort hand-off and a stalled-document sweep | Accepted | 2026-11-15 |
+| [0021](0021-file-storage-port-local-disk.md) | An `IFileStorage` port, with local disk as the first adapter | Accepted | 2026-11-15 |
+| [0022](0022-pure-dotnet-text-extraction.md) | Pure .NET text extraction, with detection from content | Accepted | 2026-11-15 |
+| [0023](0023-extracted-text-artifact.md) | Extracted text is a versioned JSON artifact in file storage | Accepted | 2026-11-15 |
 
 ## Template
 

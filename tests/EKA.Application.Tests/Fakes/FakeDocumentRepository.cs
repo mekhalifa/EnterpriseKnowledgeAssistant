@@ -78,11 +78,13 @@ internal sealed class FakeDocumentRepository : IDocumentRepository
     }
 
     public Task<IReadOnlyList<Document>> GetPendingIngestionAsync(
+        DateTimeOffset olderThan,
         int limit,
         CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<Document>>(
             [.. _documents
-                .Where(document => document.Status == IngestionStatus.Pending)
+                .Where(document => document.Status == IngestionStatus.Pending
+                                   && (document.ModifiedAt ?? document.CreatedAt) < olderThan)
                 .OrderBy(document => document.CreatedAt)
                 .Take(limit)]);
 

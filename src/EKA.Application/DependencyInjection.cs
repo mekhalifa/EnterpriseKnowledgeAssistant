@@ -8,7 +8,10 @@ using EKA.Application.Documents.DeleteDocument;
 using EKA.Application.Identity;
 using EKA.Application.Documents.GetDocument;
 using EKA.Application.Documents.ListDocuments;
-using EKA.Application.Documents.RegisterDocument;
+using EKA.Application.Documents.ExtractDocumentText;
+using EKA.Application.Documents.Ingestion;
+using EKA.Application.Documents.RecoverStalledDocuments;
+using EKA.Application.Documents.UploadDocument;
 using EKA.Application.Documents.RenameDocument;
 using EKA.Application.Documents.ResetDocument;
 using FluentValidation;
@@ -44,6 +47,18 @@ namespace EKA.Application;
 /// </remarks>
 public static class DependencyInjection
 {
+    /// <summary>
+    /// What every host needs: the clock, the option rules, and the validators.
+    /// </summary>
+    /// <remarks>
+    /// <b>Split into three since Step 7.</b> One method that registered every handler made
+    /// every host carry every handler's dependencies. The worker has no chat client, so in
+    /// Development, where the host validates the whole graph at build time,
+    /// <c>AskQuestionHandler</c>'s missing <c>IChatCompletionService</c> stopped the worker
+    /// from starting at all (step-07 section 5.4). Each host now registers what it runs:
+    /// <see cref="AddRequestHandlers"/> for the API, <see cref="AddIngestionHandlers"/> for
+    /// the worker.
+    /// </remarks>
     public static IServiceCollection AddApplication(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -53,7 +68,27 @@ public static class DependencyInjection
         // instants — the application-layer half of ADR-0008.
         services.AddSingleton(TimeProvider.System);
 
-        services.AddScoped<RegisterDocumentHandler>();
+        // Option rules. The host binds each section; this layer contributes only the rules,
+        // validated at startup.
+        services.AddSingleton<IValidateOptions<ChatOptions>, ChatOptionsValidator>();
+        services.AddSingleton<IValidateOptions<IngestionOptions>, IngestionOptionsValidator>();
+
+        // Taken from the marker's assembly rather than `...Containing<TMarker>()`, which
+        // cannot accept a static class as a type argument.
+        services.AddValidatorsFromAssembly(
+            typeof(ApplicationAssemblyMarker).Assembly,
+            lifetime: ServiceLifetime.Singleton,
+            includeInternalTypes: false);
+
+        return services;
+    }
+
+    /// <summary>The use cases behind HTTP endpoints. Registered by <c>EKA.Api</c>.</summary>
+    public static IServiceCollection AddRequestHandlers(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddScoped<UploadDocumentHandler>();
         services.AddScoped<GetDocumentHandler>();
         services.AddScoped<ListDocumentsHandler>();
         services.AddScoped<RenameDocumentHandler>();
@@ -76,17 +111,18 @@ public static class DependencyInjection
         // estimate is not conservative enough (see ITokenCounter).
         services.AddSingleton<ITokenCounter, EstimatingTokenCounter>();
 
-        // ChatOptions is bound to configuration by the host (EKA.Api), which owns where
-        // configuration comes from. This layer contributes only the rules, validated at
-        // startup like AiOptions.
-        services.AddSingleton<IValidateOptions<ChatOptions>, ChatOptionsValidator>();
+        return services;
+    }
 
-        // Taken from the marker's assembly rather than `...Containing<TMarker>()`, which
-        // cannot accept a static class as a type argument.
-        services.AddValidatorsFromAssembly(
-            typeof(ApplicationAssemblyMarker).Assembly,
-            lifetime: ServiceLifetime.Singleton,
-            includeInternalTypes: false);
+    /// <summary>The background use cases. Registered by <c>EKA.Ingestion.Worker</c>.</summary>
+    public static IServiceCollection AddIngestionHandlers(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddScoped<ExtractDocumentTextHandler>();
+        services.AddScoped<RecoverStalledDocumentsHandler>();
+        services.AddScoped<TextExtractionPipeline>();
+        services.AddScoped<ExtractedTextStore>();
 
         return services;
     }

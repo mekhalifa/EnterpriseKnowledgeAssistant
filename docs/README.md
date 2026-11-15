@@ -22,7 +22,8 @@ Each step document records what we built, why, the best option, and the alternat
 | 4 | [step-04-application-api.md](steps/step-04-application-api.md) | ✅ Complete |
 | 5 | [step-05-ai-providers.md](steps/step-05-ai-providers.md) | ✅ Complete |
 | 6 | [step-06-chat-api.md](steps/step-06-chat-api.md) | ✅ Complete |
-| 7–14 | *created as we reach them* | — |
+| 7 | [step-07-document-ingestion.md](steps/step-07-document-ingestion.md) | ✅ Complete |
+| 8–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -49,6 +50,10 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0017](adr/0017-just-in-time-user-provisioning.md) | Just-in-time user provisioning, unique per tenant | Accepted |
 | [0018](adr/0018-conservative-token-estimation.md) | Conservative token estimate for the prompt budget | Accepted |
 | [0019](adr/0019-prompt-templates-seeded-by-migration.md) | Prompt template versions ship as migrations | Accepted |
+| [0020](adr/0020-hangfire-best-effort-handoff.md) | Hangfire, best-effort hand-off, stalled-document sweep | Accepted |
+| [0021](adr/0021-file-storage-port-local-disk.md) | File storage port, local disk first | Accepted |
+| [0022](adr/0022-pure-dotnet-text-extraction.md) | Pure .NET text extraction, detection from content | Accepted |
+| [0023](adr/0023-extracted-text-artifact.md) | Extracted text as a versioned JSON artifact | Accepted |
 
 ## Project skills
 

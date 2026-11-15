@@ -135,7 +135,7 @@ public sealed class DeleteDocumentHandlerTests
     private readonly FakeDocumentRepository _documents = new();
     private readonly FakeUnitOfWork _unitOfWork = new();
 
-    private DeleteDocumentHandler Handler => new(_documents, _unitOfWork);
+    private DeleteDocumentHandler Handler => new(_documents, _unitOfWork, new FakeFileStorage());
 
     [Fact]
     public async Task Deleting_stages_the_removal_and_commits_once()

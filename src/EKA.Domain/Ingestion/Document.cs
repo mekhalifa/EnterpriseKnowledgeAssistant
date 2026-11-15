@@ -116,6 +116,37 @@ public sealed class Document : EntityAudit<Guid>
         MarkModified(at);
     }
 
+    /// <summary>
+    /// True while text extraction is still owed: the document is waiting for it, or an
+    /// earlier attempt began it and never finished.
+    /// </summary>
+    /// <remarks>
+    /// Background jobs are delivered <i>at least</i> once. A job can run twice, or run again
+    /// after a worker crashed mid-extraction. The aggregate answers "is there work here?" so
+    /// the job does not have to read <see cref="Status"/> and re-derive the state machine
+    /// (ADR-0011).
+    /// </remarks>
+    public bool AwaitsExtraction => Status is IngestionStatus.Pending or IngestionStatus.Extracting;
+
+    /// <summary>
+    /// <see cref="BeginExtraction"/>, or a no-op if extraction already began. That covers a
+    /// crashed attempt, which left the status at Extracting with no one working on it.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="BeginExtraction"/> stays strict, because "begin twice" is a bug in an
+    /// interactive caller. Only the redelivered job needs re-entry, and it gets its own name
+    /// so the leniency is explicit at the call site.
+    /// </remarks>
+    public void StartOrResumeExtraction(DateTimeOffset at)
+    {
+        if (Status is IngestionStatus.Extracting)
+        {
+            return;
+        }
+
+        BeginExtraction(at);
+    }
+
     public void CompleteExtraction(DateTimeOffset at)
     {
         EnsureStatusIs(IngestionStatus.Extracting, IngestionStatus.Chunking);

@@ -52,7 +52,7 @@ public sealed class RoundTripTests
         loaded.File.FileName.ShouldBe("handbook.pdf");
         loaded.File.ContentType.ShouldBe("application/pdf");
         loaded.File.SizeBytes.ShouldBe(2048);
-        loaded.File.ContentHash.ShouldBe(TestFixtures.Sha256);
+        loaded.File.ContentHash.ShouldBe(document.File.ContentHash);
 
         loaded.Chunks.Count.ShouldBe(3);
         loaded.Chunks.Select(c => c.Index.Value).Order().ShouldBe([0, 1, 2]);

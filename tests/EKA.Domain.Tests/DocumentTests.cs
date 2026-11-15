@@ -6,6 +6,52 @@ namespace EKA.Domain.Tests;
 
 public sealed class DocumentTests
 {
+    // ── Redelivered extraction jobs (Step 7) ────────────────────────────────────────
+
+    [Theory]
+    [InlineData(IngestionStatus.Pending, true)]
+    [InlineData(IngestionStatus.Extracting, true)]
+    [InlineData(IngestionStatus.Chunking, false)]
+    [InlineData(IngestionStatus.Embedding, false)]
+    [InlineData(IngestionStatus.Completed, false)]
+    [InlineData(IngestionStatus.Failed, false)]
+    public void Extraction_is_owed_only_while_pending_or_interrupted(IngestionStatus status, bool owed)
+    {
+        // A Failed document is not owed extraction: retrying it is the user's decision, via
+        // Reset, not something a redelivered job may do on its own.
+        TestData.DocumentIn(status).AwaitsExtraction.ShouldBe(owed);
+    }
+
+    [Fact]
+    public void Start_or_resume_begins_a_pending_document()
+    {
+        var document = TestData.NewDocument();
+
+        document.StartOrResumeExtraction(TestData.Now);
+
+        document.Status.ShouldBe(IngestionStatus.Extracting);
+    }
+
+    [Fact]
+    public void Start_or_resume_re_enters_an_interrupted_extraction_without_complaint()
+    {
+        // The worker crashed after saving Extracting; the job is redelivered.
+        var document = TestData.DocumentIn(IngestionStatus.Extracting);
+
+        Should.NotThrow(() => document.StartOrResumeExtraction(TestData.Later));
+        document.Status.ShouldBe(IngestionStatus.Extracting);
+    }
+
+    [Theory]
+    [InlineData(IngestionStatus.Chunking)]
+    [InlineData(IngestionStatus.Completed)]
+    [InlineData(IngestionStatus.Failed)]
+    public void Start_or_resume_is_still_a_state_machine_move(IngestionStatus status)
+    {
+        Should.Throw<InvalidStateTransitionException>(
+            () => TestData.DocumentIn(status).StartOrResumeExtraction(TestData.Now));
+    }
+
     // ── Construction ────────────────────────────────────────────────────────────────
 
     [Fact]

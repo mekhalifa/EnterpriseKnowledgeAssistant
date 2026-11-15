@@ -1,3 +1,4 @@
+using EKA.Application.Abstractions.Ingestion;
 using EKA.Domain.Ingestion;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
@@ -169,7 +170,7 @@ public sealed class AuditAndEventTests
         // Force the commit to fail: a duplicate chunk index violates the unique index.
         context.DocumentChunks.Add(TestFixtures.NewChunk(document.Id, index: 0));
 
-        await Should.ThrowAsync<DbUpdateException>(
+        await Should.ThrowAsync<DuplicateKeyException>(
             async () => await context.SaveChangesAsync());
 
         recorder.DispatchCallCount.ShouldBe(0);

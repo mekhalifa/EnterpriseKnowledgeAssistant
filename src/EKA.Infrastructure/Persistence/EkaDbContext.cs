@@ -6,6 +6,8 @@ using EKA.Domain.Ingestion;
 using EKA.Domain.Prompting;
 using EKA.Domain.Providers;
 using EKA.Domain.Retrieval;
+using EKA.Application.Abstractions.Ingestion;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
 namespace EKA.Infrastructure.Persistence;
@@ -78,7 +80,18 @@ public sealed class EkaDbContext : DbContext, IUnitOfWork
             .SelectMany(aggregate => aggregate.DomainEvents)
             .ToList();
 
-        var written = await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        int written;
+        try
+        {
+            written = await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 } sql)
+        {
+            // 2601: duplicate key in a unique index. 2627: unique or primary key constraint.
+            // Translated here so the application can handle a lost race (see
+            // DuplicateKeyException) without referencing EF Core or SQL Server error numbers.
+            throw new DuplicateKeyException(ViolatedIndexName(sql), exception);
+        }
 
         foreach (var aggregate in aggregates)
         {
@@ -93,6 +106,18 @@ public sealed class EkaDbContext : DbContext, IUnitOfWork
         }
 
         return written;
+    }
+
+    /// <summary>
+    /// The index or constraint named in SQL Server's message. 2601 quotes the table first and
+    /// the index second; 2627 quotes the constraint first.
+    /// </summary>
+    private static string ViolatedIndexName(SqlException exception)
+    {
+        var quoted = System.Text.RegularExpressions.Regex.Matches(exception.Message, "'([^']+)'");
+        var position = exception.Number == 2601 ? 1 : 0;
+
+        return quoted.Count > position ? quoted[position].Groups[1].Value : "unknown";
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

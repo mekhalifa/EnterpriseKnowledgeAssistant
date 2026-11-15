@@ -512,9 +512,6 @@ namespace EKA.Infrastructure.Persistence.Migrations
 
                             b1.HasKey("DocumentId");
 
-                            b1.HasIndex("ContentHash")
-                                .HasDatabaseName("IX_Documents_ContentHash");
-
                             b1.ToTable("Documents");
 
                             b1.WithOwner()

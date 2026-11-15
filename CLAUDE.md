@@ -112,6 +112,12 @@ dotnet user-secrets --project src/EKA.Api set "Ai:ApiKey" "<key>"
 dotnet test --filter Category=Smoke    # real, billed provider calls; skip without a key
 dotnet test --filter Category!=Smoke   # everything else; needs no key
 
+# Ingestion worker (Step 7). Same connection string as the API, in its OWN user secrets.
+# Both processes share file storage: %LOCALAPPDATA%/EKA/files unless Storage:RootPath is set.
+dotnet user-secrets --project src/EKA.Ingestion.Worker set "ConnectionStrings:EkaDatabase" "<connection string>"
+dotnet run --project src/EKA.Ingestion.Worker
+# Local connection strings: use 127.0.0.1, not localhost (the SQL container binds IPv4 only).
+
 # Local SQL Server. Requires deploy/.env (copy deploy/.env.example first).
 docker compose -f deploy/docker-compose.yml up -d
 docker compose -f deploy/docker-compose.yml down       # add -v to drop the data volume

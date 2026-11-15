@@ -1,5 +1,7 @@
 using EKA.Application.Abstractions;
+using EKA.Application.Abstractions.Ingestion;
 using EKA.Application.Common;
+using EKA.Application.Documents.Ingestion;
 
 namespace EKA.Application.Documents.DeleteDocument;
 
@@ -22,7 +24,7 @@ namespace EKA.Application.Documents.DeleteDocument;
 /// Recorded as a known limitation in docs/PROGRESS.md so it cannot be forgotten.
 /// </para>
 /// </remarks>
-public sealed class DeleteDocumentHandler(IDocumentRepository documents, IUnitOfWork unitOfWork)
+public sealed class DeleteDocumentHandler(IDocumentRepository documents, IUnitOfWork unitOfWork, IFileStorage storage)
 {
     public async Task<Result> HandleAsync(
         DeleteDocumentCommand command,
@@ -41,6 +43,13 @@ public sealed class DeleteDocumentHandler(IDocumentRepository documents, IUnitOf
 
         documents.Remove(document);
         await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Files after the row, never before: a crash in between leaves orphaned bytes (wasted
+        // disk), where the reverse order would leave a row whose file is gone (a document
+        // that can never be re-processed). Deletion in storage is idempotent. Vectors join
+        // this list in Step 8.
+        await storage.DeleteAsync(document.StorageKey, cancellationToken).ConfigureAwait(false);
+        await storage.DeleteAsync(ExtractedTextStore.KeyFor(document), cancellationToken).ConfigureAwait(false);
 
         return Result.Success();
     }

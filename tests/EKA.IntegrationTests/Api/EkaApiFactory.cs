@@ -33,7 +33,9 @@ namespace EKA.IntegrationTests.Api;
 /// has nothing to do with the code under test.
 /// </para>
 /// </remarks>
-internal sealed class EkaApiFactory(string connectionString) : WebApplicationFactory<Program>
+internal sealed class EkaApiFactory(
+    string connectionString,
+    IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -59,6 +61,15 @@ internal sealed class EkaApiFactory(string connectionString) : WebApplicationFac
         // with no key at all (CI). Host settings have the lowest precedence, so a developer's
         // real key in User Secrets still wins locally; it is loaded, and never used.
         builder.UseSetting("Ai:ApiKey", "integration-tests-make-no-ai-calls");
+
+        // A throwaway folder per factory. The default (%LOCALAPPDATA%/EKA/files) is the
+        // developer's real storage, and a test suite must never write there.
+        builder.UseSetting("Storage:RootPath", StorageRoot);
+
+        foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
+        {
+            builder.UseSetting(key, value);
+        }
 
         // The one substitution in an otherwise real application. Everything above the port
         // (endpoints, handlers, prompt building, persistence) is real; the model is not,
@@ -90,6 +101,20 @@ internal sealed class EkaApiFactory(string connectionString) : WebApplicationFac
 
     /// <summary>The model stand-in: records every prompt, answers or fails on demand.</summary>
     public RecordingChatService Chat { get; } = new();
+
+    /// <summary>Where this factory's uploaded files land. Shared with an in-process worker in
+    /// the ingestion tests, exactly as the real API and worker share one folder.</summary>
+    public string StorageRoot { get; } = Path.Combine(Path.GetTempPath(), "eka-tests", Guid.NewGuid().ToString("N"));
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+
+        if (disposing && Directory.Exists(StorageRoot))
+        {
+            Directory.Delete(StorageRoot, recursive: true);
+        }
+    }
 
     /// <summary>A client that presents no identity at all.</summary>
     public HttpClient CreateAnonymousClient() => CreateClient();

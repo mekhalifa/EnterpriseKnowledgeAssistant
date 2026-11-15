@@ -16,15 +16,21 @@ internal static class TestFixtures
     /// <summary>A fresh tenant per test, so rows written by one cannot affect another.</summary>
     public static TenantId NewTenant() => TenantId.New();
 
+    public static string NewHash() =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Guid.NewGuid().ToByteArray()));
+
     public static Document NewDocument(
         TenantId tenant,
         string title = "Employee Handbook",
-        string contentHash = Sha256) =>
+        string? contentHash = null) =>
         new(
             Guid.NewGuid(),
             tenant,
             new DocumentTitle(title),
-            new FileMetadata("handbook.pdf", "application/pdf", 2048, contentHash),
+            // A fresh hash per document unless the test asks for one: since Step 7 the same
+            // bytes may exist only once per tenant (UX_Documents_TenantId_ContentHash), and
+            // a shared default would make unrelated tests collide on it.
+            new FileMetadata("handbook.pdf", "application/pdf", 2048, contentHash ?? NewHash()),
             storageKey: "tenant/documents/handbook.pdf",
             Now);
 
