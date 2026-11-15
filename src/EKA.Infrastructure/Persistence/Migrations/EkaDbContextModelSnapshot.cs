@@ -25,7 +25,6 @@ namespace EKA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("EKA.Domain.Conversations.Conversation", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset?>("ArchivedAt")
@@ -66,7 +65,6 @@ namespace EKA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("EKA.Domain.Conversations.Message", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Content")
@@ -114,7 +112,6 @@ namespace EKA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("EKA.Domain.Identity.User", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("CreatedAt")
@@ -160,12 +157,12 @@ namespace EKA.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExternalId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_Users_ExternalId");
-
                     b.HasIndex("TenantId", "Email")
                         .HasDatabaseName("IX_Users_TenantId_Email");
+
+                    b.HasIndex("TenantId", "ExternalId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_Users_TenantId_ExternalId");
 
                     b.ToTable("Users", (string)null);
                 });
@@ -173,7 +170,6 @@ namespace EKA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("EKA.Domain.Ingestion.Document", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Authority")
@@ -236,7 +232,6 @@ namespace EKA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("EKA.Domain.Ingestion.DocumentChunk", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Content")
@@ -290,7 +285,6 @@ namespace EKA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("EKA.Domain.Prompting.PromptTemplate", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("AIProviderId")
@@ -348,7 +342,6 @@ namespace EKA.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("EKA.Domain.Providers.AIProvider", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("ChatModel")

@@ -42,6 +42,9 @@ useful as the current belief.
 | [0014](0014-development-authentication.md) | A development authentication scheme until an identity provider exists | Accepted | 2026-11-12 |
 | [0015](0015-openai-compatible-provider.md) | One OpenAI-compatible adapter, with OpenRouter as the first endpoint | Accepted | 2026-11-15 |
 | [0016](0016-application-owns-ai-ports.md) | The application owns its AI ports; `IChatClient` stays in the adapter | Accepted | 2026-11-15 |
+| [0017](0017-just-in-time-user-provisioning.md) | Just-in-time user provisioning, unique per tenant | Accepted | 2026-11-15 |
+| [0018](0018-conservative-token-estimation.md) | A conservative token estimate for the prompt budget, exact counts where providers give them | Accepted | 2026-11-15 |
+| [0019](0019-prompt-templates-seeded-by-migration.md) | Prompt template versions ship as migrations | Accepted | 2026-11-15 |
 
 ## Template
 

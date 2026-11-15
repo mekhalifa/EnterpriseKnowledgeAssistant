@@ -21,7 +21,8 @@ Each step document records what we built, why, the best option, and the alternat
 | 3 | [step-03-persistence.md](steps/step-03-persistence.md) | ✅ Complete |
 | 4 | [step-04-application-api.md](steps/step-04-application-api.md) | ✅ Complete |
 | 5 | [step-05-ai-providers.md](steps/step-05-ai-providers.md) | ✅ Complete |
-| 6–14 | *created as we reach them* | — |
+| 6 | [step-06-chat-api.md](steps/step-06-chat-api.md) | ✅ Complete |
+| 7–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -45,6 +46,9 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0014](adr/0014-development-authentication.md) | A development authentication scheme until Step 12 | Accepted |
 | [0015](adr/0015-openai-compatible-provider.md) | One OpenAI-compatible adapter; OpenRouter first | Accepted |
 | [0016](adr/0016-application-owns-ai-ports.md) | The application owns its AI ports | Accepted |
+| [0017](adr/0017-just-in-time-user-provisioning.md) | Just-in-time user provisioning, unique per tenant | Accepted |
+| [0018](adr/0018-conservative-token-estimation.md) | Conservative token estimate for the prompt budget | Accepted |
+| [0019](adr/0019-prompt-templates-seeded-by-migration.md) | Prompt template versions ship as migrations | Accepted |
 
 ## Project skills
 

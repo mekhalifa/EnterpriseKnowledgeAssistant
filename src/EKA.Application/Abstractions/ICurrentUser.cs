@@ -22,5 +22,13 @@ public interface ICurrentUser
     /// unauthenticated.</summary>
     Guid? TenantId { get; }
 
+    /// <summary>The caller's email as the identity provider asserts it, if it does.</summary>
+    /// <remarks>Used only to provision a local user on first contact (Step 6). Default
+    /// members so a service identity, which has no mailbox, need not implement them.</remarks>
+    string? Email => null;
+
+    /// <summary>The caller's display name as the identity provider asserts it, if it does.</summary>
+    string? DisplayName => null;
+
     bool IsAuthenticated => SubjectId is not null;
 }

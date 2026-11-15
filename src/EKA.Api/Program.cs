@@ -4,6 +4,7 @@ using EKA.Api.Errors;
 using EKA.Api.Security;
 using EKA.Application;
 using EKA.Application.Abstractions;
+using EKA.Application.Conversations;
 using EKA.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 
@@ -113,6 +114,12 @@ builder.Services.AddAuthorization(options =>
 
 builder.Services.AddApplication();
 
+// Prompt budget and template name. Tuning with defaults (see ChatOptions); the rules live
+// in EKA.Application, and this host only says where the values come from.
+builder.Services.AddOptions<ChatOptions>()
+    .BindConfiguration(ChatOptions.SectionName)
+    .ValidateOnStart();
+
 // Throws at startup if the connection string is missing, which is deliberate: a
 // misconfiguration found by a user is a misconfiguration found too late.
 //
@@ -155,6 +162,7 @@ app.UseAuthorization();
 
 app.MapHealthEndpoints();
 app.MapDocumentEndpoints();
+app.MapConversationEndpoints();
 
 await app.RunAsync();
 

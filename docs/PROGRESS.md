@@ -3,38 +3,40 @@
 Single source of truth for project state. Updated at the end of every working session.
 
 **Last updated:** 2026-11-15
-**Current step:** Step 5 complete → Step 6 next
-**Overall:** Phase B started, 5 of 14 steps done
-**Branch:** `step-05-ai-providers` (branched from `step-04-application-api`; none merged to `main`)
+**Current step:** Step 6 complete → Step 7 next
+**Overall:** Phase B, 6 of 14 steps done
+**Branch:** `step-06-chat-api` (branched from `step-05-ai-providers`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**Step 6 — Prompt templates and the chat API.**
-Exit criterion: *a client creates a conversation, asks a question, and reads back persisted
-messages.*
+**Step 7 — Document ingestion.**
+Exit criterion: *uploading a file creates a tracked document and extracts text
+asynchronously.*
 
-1. **Settle the user-identity decision first** (table below): `Conversation` needs a local
-   `UserId`, and today the only identity is the development scheme's `sub` claim.
-2. Prompt assembly with a **Builder**: active `PromptTemplate` (versioned, already in the
-   domain) → system instruction → windowed history → the new question. Every piece is a
-   `ChatTurn`; document text is never `MessageRole.System`.
-3. **Context-window budgeting** in `TokenCount`, not characters. Needs a token estimate —
-   decide between a real tokenizer (`Microsoft.ML.Tokenizers`) and a conservative
-   character-based estimate.
-4. Use cases as slices: `StartConversation`, `AskQuestion`, `GetConversation`. `AskQuestion`
-   calls `IChatCompletionService` and persists both messages with
-   `ChatCompletion.InputTokens`/`OutputTokens`.
-5. Endpoints through `EKA.Contracts`, tenant from the principal, **conversation ownership
-   checked in the repository query** (another user's conversation is a 404, as for documents).
-6. A provider failure must surface as **502 with `ai.*` code** — the first real use of
-   `ErrorType.Provider`. End-to-end test with a fake `IChatCompletionService` registered in
-   `EkaApiFactory`; no key needed in the integration suite.
-7. Seed one default prompt template (migration or startup seeder — decide).
+**Decisions needed first — all three shape the code:**
 
-Reference: [concepts/design-patterns.md](concepts/design-patterns.md) (Builder),
-[adr/0016](adr/0016-application-owns-ai-ports.md).
+| Decision | Options |
+|---|---|
+| Background job engine | Hangfire on SQL Server (dashboard, retries, no new infrastructure) vs a queue (Azure Storage Queue / RabbitMQ) consumed by `EKA.Ingestion.Worker` |
+| File storage | Local disk behind an `IFileStorage` port (simplest) vs Azure Blob vs S3-compatible MinIO in Docker |
+| Text extraction | PdfPig for PDF + OpenXML for DOCX (pure .NET) vs Azure AI Document Intelligence (layout-aware, paid) |
+
+Then:
+
+1. `POST /api/documents/upload` (multipart): size and type limits enforced **before** reading
+   the whole body, content hash computed while streaming, stored through `IFileStorage`.
+2. Unique index `(TenantId, ContentHash)` — closes the registration race left in Step 4;
+   a collision becomes "already registered", not a 500.
+3. Hand-off to the worker; the worker drives `BeginExtraction` → `CompleteExtraction` /
+   `Fail` and stores extracted text with page and section metadata.
+4. Domain-event handlers: `LoggingDomainEventDispatcher` gets its first real subscriber.
+5. Chain of Responsibility for the extraction pipeline (detect type → extract → normalize).
+6. **Load → change → save tests** for every new aggregate operation (step-06 §5.1 taught why).
+
+Reference: [concepts/design-patterns.md](concepts/design-patterns.md) (Chain of
+Responsibility), [adr/0004](adr/0004-separate-ingestion-worker.md).
 
 ---
 
@@ -181,6 +183,38 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 2. A comment of mine claimed the resilience package validates lazily; the tests showed it
    validates at startup. Corrected.
 
+#### Step 6 — Prompt templates and the chat API ✅
+
+- **Exit criterion met twice:** in the integration suite with a stand-in model, and against
+  the real API + SQL Server + OpenRouter — three questions, windowed history, the seeded
+  prompt declining to invent a leave policy.
+- Four slices: `StartConversation`, `AskQuestion`, `GetConversation`, `ListConversations`;
+  four endpoints under `/api/conversations`, scoped to tenant **and** user in the query.
+- `UserProvisioner`: just-in-time local users; reads never provision.
+- `PromptBuilder`: one System turn, history trimmed oldest-first to a token budget, orphaned
+  answers dropped, single-pass placeholder substitution.
+- A turn is atomic: model called before the aggregate is touched; provider failure → 502
+  (`ai.*`) with nothing persisted. First real use of `ErrorType.Provider`.
+- Migration `ConversationsAndDefaultPrompt`: `UX_Users_TenantId_ExternalId`, seeded
+  provider row and template `default` v1.
+- **394 tests** (+21 application, +9 conversation end-to-end, +2 persistence regression).
+- Decided: [ADR-0017](adr/0017-just-in-time-user-provisioning.md) JIT provisioning;
+  [ADR-0018](adr/0018-conservative-token-estimation.md) token estimate;
+  [ADR-0019](adr/0019-prompt-templates-seeded-by-migration.md) prompts as migrations.
+
+**Found and fixed, all recorded in [step-06](steps/step-06-chat-api.md):**
+
+1. **A cross-tenant identity bug, found by reading:** a global `ExternalId` index and an
+   untenanted lookup would have resolved tenant B's `dev-user` to tenant A's row.
+2. **UPDATE instead of INSERT:** EF Core treats Guid keys as store-generated, so a child
+   added to a *loaded* aggregate was tracked as Modified → `DbUpdateConcurrencyException`.
+   Fixed model-wide with `ValueGenerated.Never`; **Step 8's chunks would have hit it too**,
+   and a regression test now proves it for both.
+3. A test passed while its request was a 500 — it asserted a side effect, not the status.
+4. A stale incremental build (restored file with an old timestamp) reached the running API;
+   caught only by running the real stack.
+5. `localhost` resolves to `::1` here; the SQL container listens on `127.0.0.1` only.
+
 ---
 
 ## Step checklist
@@ -192,8 +226,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | 3 | Persistence: EF Core + SQL Server in Docker | ✅ Complete — 233 tests |
 | 4 | Application layer + API surface | ✅ Complete — 322 tests |
 | 5 | AI providers via Microsoft.Extensions.AI | ✅ Complete — 362 tests |
-| 6 | Prompt templates + chat API | ⬜ Next |
-| 7 | Document ingestion | ⬜ Not started |
+| 6 | Prompt templates + chat API | ✅ Complete — 394 tests |
+| 7 | Document ingestion | ⬜ Next |
 | 8 | Chunking + embeddings | ⬜ Not started |
 | 9 | Vector retrieval with ACL filtering | ⬜ Not started |
 | 10 | RAG answer generation with citations | ⬜ Not started |
@@ -208,17 +242,17 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 
 | When | Decision | Options |
 |---|---|---|
-| Step 6 | **Local user identity** — blocking | `Conversation` needs a `UserId`. Just-in-time provisioning of a `User` row from the principal's `sub` + tenant on first request (recommended — it is what Step 12's real IdP needs anyway) vs keying conversations on the raw subject string |
-| Step 6 | Token estimation for the context budget | `Microsoft.ML.Tokenizers` (exact for OpenAI models, wrong for others behind OpenRouter) vs a conservative chars/4 estimate with headroom |
-| Step 6 | Default prompt template | Seeded by migration (versioned with the schema) vs a startup seeder (editable without a migration) |
+| Step 7 | **Background job engine** — blocking | Hangfire (SQL-backed, dashboard) vs a queue |
+| Step 7 | **File storage** — blocking | Local disk / Azure Blob / S3-compatible (MinIO) |
+| Step 7 | **Text extraction** — blocking | PdfPig + OpenXML (pure .NET) vs Azure AI Document Intelligence |
 | Before real documents | **Data processor approval** | OpenRouter sees prompts and retrieved text ([ADR-0015](adr/0015-openai-compatible-provider.md)). Fine for learning data; decide before anything sensitive is ingested |
-| Step 7 | Background job engine | Hangfire (SQL-backed, dashboard) vs a queue |
 | Step 7 | Unique index on `(TenantId, ContentHash)` | Closes the registration race left open in Step 4. Natural to add with the real upload path |
-| Step 7 | File storage | Local disk / Azure Blob / S3-compatible (MinIO) |
 | Step 9 | Hybrid search | Dense-only first; add BM25 only if Step 11 shows a gap |
 | Step 9 | ACL model | `DocumentAcl` deliberately not built — designed with access-filtered retrieval |
+| Step 11 | Persist the prompt template version on each answer | Reported in `AskQuestionResponse` today, not stored; evaluation will need it ([ADR-0019](adr/0019-prompt-templates-seeded-by-migration.md)) |
 | Step 12 | Identity provider | Entra ID vs Keycloak vs ASP.NET Core Identity |
 | Step 12 | EF global query filters | As *defence in depth* on top of explicit tenant parameters, not instead of them — see ADR-0009 |
+| Step 12 | `AIProvider` rows vs `Ai` configuration | The seeded row records what a prompt was written for; configuration chooses what answers. Reconcile or drop the table |
 
 ---
 
@@ -244,6 +278,7 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | At most one active prompt template per name | `UX_PromptTemplates_Name_Active`, filtered `[IsActive] = 1` | ✅ Created and tested |
 | `default(TenantId)` must never persist | `IsEmpty` check in every aggregate constructor + non-nullable column | ✅ Both halves done |
 | Same bytes registered once per tenant | Content-hash lookup in `RegisterDocumentHandler` | ⚠️ Handler half done; the unique index that closes the race is Step 7 |
+| One local user per identity per tenant | `UX_Users_TenantId_ExternalId` | ✅ Created and tested (Step 6; replaced the global index) |
 
 ---
 
@@ -262,7 +297,19 @@ persisted messages", so they belong there. Document upload of actual bytes is St
   correctness failure. Closed by a unique index on `(TenantId, ContentHash)` in Step 7.
 - **Deleting a document removes the row and nothing else.** The stored file and the vectors
   do not exist yet; Step 8 owns making deletion complete.
-- **No conversation endpoints.** Deferred to Step 6 deliberately — see the decision table.
+- **First-contact provisioning races itself.** Two concurrent *first* requests by one person
+  both miss the user lookup; the unique index rejects the second as a 500. Safe, not
+  invisible; a retry succeeds ([ADR-0017](adr/0017-just-in-time-user-provisioning.md)).
+- **Concurrent asks in one conversation are not serialized.** Two simultaneous questions both
+  load the thread, both append, both save — interleaving Q1 Q2 A1 A2. No concurrency token
+  on `Conversation` yet; a `rowversion` would turn the second into a 409.
+- **Profile claims are copied at first contact and never refreshed** (email, display name).
+- **The prompt template version is reported, not persisted** on the answer.
+- **Archiving has no endpoint**, so the domain's "archived conversations accept no messages"
+  rule is unreachable over HTTP. It throws `DomainException` (500), not
+  `InvalidStateTransitionException` (409) — fix before an archive endpoint ships.
+- **No answer citations yet.** Every answer is `IsUngrounded`; v1's instruction says so to
+  the model. Retrieval is Steps 9–10.
 - **`ListAsync` uses offset paging**, so a deep page scans and discards, and an insert
   between two requests can shift a row across a page boundary. Correct for a page-numbered
   UI; revisit if a tenant's document count reaches the thousands.

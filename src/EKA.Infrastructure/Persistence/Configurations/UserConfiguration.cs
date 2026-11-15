@@ -49,9 +49,16 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         // The sign-in path: a token arrives carrying a subject claim, and the local
         // projection is found by it. Unique because two local users for one identity would
         // split a person's history in half.
-        builder.HasIndex(user => user.ExternalId)
+        //
+        // Unique per tenant, not globally. A subject id is unique only within one identity
+        // provider's issuer, and two tenants may share an issuer; under the development
+        // scheme every tenant presents "dev-user". The global index this replaced (Step 3)
+        // would have made tenant B's first sign-in collide with tenant A's user, and the
+        // global lookup that went with it would have returned A's row (step-06 section 2).
+        // TenantId leads, so the same index serves the tenant-scoped lookup.
+        builder.HasIndex(user => new { user.TenantId, user.ExternalId })
             .IsUnique()
-            .HasDatabaseName("UX_Users_ExternalId");
+            .HasDatabaseName("UX_Users_TenantId_ExternalId");
 
         // Not unique: the same address can legitimately exist in two tenants.
         builder.HasIndex(user => new { user.TenantId, user.Email })

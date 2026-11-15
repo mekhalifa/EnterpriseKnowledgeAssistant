@@ -1,4 +1,5 @@
 using EKA.Application.Abstractions;
+using EKA.Application.Identity;
 using EKA.Domain.Common;
 
 namespace EKA.Api.Security;
@@ -49,5 +50,28 @@ internal static class TenantPolicy
                 + $"'{Name}' policy should have rejected the request before this point.");
 
         return new TenantId(tenantId);
+    }
+
+    /// <summary>
+    /// The caller as a use case sees them: tenant, subject and profile, all from the
+    /// authenticated principal. Never from the request body (ADR-0014).
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No subject, on an endpoint the policy
+    /// already required authentication for. A wiring bug, loud for the reason given on
+    /// <see cref="RequireTenantId"/>.</exception>
+    public static CallerIdentity RequireCaller(this ICurrentUser currentUser)
+    {
+        ArgumentNullException.ThrowIfNull(currentUser);
+
+        var subject = currentUser.SubjectId
+            ?? throw new InvalidOperationException(
+                $"The authenticated caller has no subject claim, but the '{Name}' policy "
+                + "requires an authenticated user.");
+
+        return new CallerIdentity(
+            currentUser.RequireTenantId(),
+            subject,
+            currentUser.Email,
+            currentUser.DisplayName);
     }
 }

@@ -60,7 +60,8 @@ public sealed class SchemaMigrationTests
     [InlineData("UX_DocumentChunks_DocumentId_ChunkIndex", "DocumentChunks", true)]
     [InlineData("UX_PromptTemplates_Name_Active", "PromptTemplates", true)]
     [InlineData("UX_PromptTemplates_Name_Version", "PromptTemplates", true)]
-    [InlineData("UX_Users_ExternalId", "Users", true)]
+    // Per tenant since Step 6; the global UX_Users_ExternalId was a cross-tenant collision.
+    [InlineData("UX_Users_TenantId_ExternalId", "Users", true)]
     [InlineData("UX_AIProviders_Name", "AIProviders", true)]
     [InlineData("IX_Documents_ContentHash", "Documents", false)]
     [InlineData("IX_Documents_TenantId_Status", "Documents", false)]

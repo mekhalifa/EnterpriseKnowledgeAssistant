@@ -67,6 +67,11 @@ internal sealed class DevelopmentAuthenticationHandler : AuthenticationHandler<A
                 new Claim(ClaimTypes.NameIdentifier, subject),
                 new Claim("sub", subject),
                 new Claim("tid", tenantId.ToString()),
+                // Profile claims, because Step 6 provisions a local user from them and the
+                // domain requires both. ".invalid" is reserved by RFC 2606, so the address can
+                // never reach a real mailbox, nor be mistaken for one in a user list.
+                new Claim("email", $"{subject}@dev.invalid"),
+                new Claim("name", subject),
             ],
             DevelopmentAuthenticationOptions.SchemeName);
 

@@ -88,6 +88,9 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
+    <!-- IOptions<T> / IValidateOptions<T> only: EKA.Application reads ChatOptions without
+         knowing where configuration comes from. Binding stays in EKA.Api. -->
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="$(MicrosoftRuntimeVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MicrosoftRuntimeVersion)" />
     <!-- Test-side: the provider smoke test reads the key the same way EKA.Api does. -->
     <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="$(MicrosoftRuntimeVersion)" />

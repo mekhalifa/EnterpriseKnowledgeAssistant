@@ -31,10 +31,13 @@ internal sealed class UserRepository : IUserRepository
     /// from caller input.
     /// </remarks>
     public Task<User?> FindByExternalIdAsync(
+        TenantId tenantId,
         string externalId,
         CancellationToken cancellationToken = default) =>
         _context.Users
-            .FirstOrDefaultAsync(user => user.ExternalId == externalId, cancellationToken);
+            .FirstOrDefaultAsync(
+                user => user.TenantId == tenantId && user.ExternalId == externalId,
+                cancellationToken);
 
     public void Add(User user) => _context.Users.Add(user);
 }

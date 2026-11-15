@@ -1,4 +1,11 @@
+using EKA.Application.Abstractions.AI;
+using EKA.Application.Conversations;
+using EKA.Application.Conversations.AskQuestion;
+using EKA.Application.Conversations.GetConversation;
+using EKA.Application.Conversations.ListConversations;
+using EKA.Application.Conversations.StartConversation;
 using EKA.Application.Documents.DeleteDocument;
+using EKA.Application.Identity;
 using EKA.Application.Documents.GetDocument;
 using EKA.Application.Documents.ListDocuments;
 using EKA.Application.Documents.RegisterDocument;
@@ -6,6 +13,7 @@ using EKA.Application.Documents.RenameDocument;
 using EKA.Application.Documents.ResetDocument;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace EKA.Application;
 
@@ -51,6 +59,27 @@ public static class DependencyInjection
         services.AddScoped<RenameDocumentHandler>();
         services.AddScoped<ResetDocumentHandler>();
         services.AddScoped<DeleteDocumentHandler>();
+
+        services.AddScoped<StartConversationHandler>();
+        services.AddScoped<AskQuestionHandler>();
+        services.AddScoped<GetConversationHandler>();
+        services.AddScoped<ListConversationsHandler>();
+
+        services.AddScoped<UserProvisioner>();
+
+        // Transient, not scoped: the builder accumulates parts in fields. Sharing one instance
+        // across two prompts built in the same request would leak the first prompt's history
+        // into the second.
+        services.AddTransient<PromptBuilder>();
+
+        // Pure and stateless. Replaced by a real tokenizer in EKA.AI if Step 11 shows the
+        // estimate is not conservative enough (see ITokenCounter).
+        services.AddSingleton<ITokenCounter, EstimatingTokenCounter>();
+
+        // ChatOptions is bound to configuration by the host (EKA.Api), which owns where
+        // configuration comes from. This layer contributes only the rules, validated at
+        // startup like AiOptions.
+        services.AddSingleton<IValidateOptions<ChatOptions>, ChatOptionsValidator>();
 
         // Taken from the marker's assembly rather than `...Containing<TMarker>()`, which
         // cannot accept a static class as a type argument.

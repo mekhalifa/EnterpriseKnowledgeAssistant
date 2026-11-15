@@ -1,9 +1,11 @@
+using EKA.AI.Configuration;
 using EKA.Application.Abstractions.AI;
 using EKA.Application.Common;
 using EKA.Domain.Common;
 using EKA.Domain.Conversations;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EKA.AI;
 
@@ -20,8 +22,17 @@ namespace EKA.AI;
 /// </remarks>
 internal sealed partial class ChatCompletionService(
     IChatClient chatClient,
+    IOptions<AiOptions> options,
     ILogger<ChatCompletionService> logger) : IChatCompletionService
 {
+    private readonly string _configuredModel = options.Value.ChatModel;
+
+    /// <summary>
+    /// The host the requests go to, so a stored answer says which service wrote it:
+    /// <c>openrouter.ai</c>, <c>api.openai.com</c>, <c>localhost</c>.
+    /// </summary>
+    private readonly string _provider = options.Value.Endpoint?.Host ?? "api.openai.com";
+
     public async Task<Result<ChatCompletion>> CompleteAsync(
         IReadOnlyList<ChatTurn> conversation,
         CancellationToken cancellationToken = default)
@@ -60,7 +71,8 @@ internal sealed partial class ChatCompletionService(
 
         return new ChatCompletion(
             text,
-            response.ModelId,
+            _provider,
+            response.ModelId ?? _configuredModel,
             Tokens.From(response.Usage?.InputTokenCount),
             Tokens.From(response.Usage?.OutputTokenCount));
     }

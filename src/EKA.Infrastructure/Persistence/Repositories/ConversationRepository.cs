@@ -32,7 +32,14 @@ internal sealed class ConversationRepository : IConversationRepository
         Guid conversationId,
         CancellationToken cancellationToken = default) =>
         _context.Conversations
-            .Include(conversation => conversation.Messages)
+            // ORDERED include. Without OrderBy, SQL Server returns the messages in whatever
+            // order the plan produces, and the aggregate rebuilds its list in that order.
+            // LastMessage, the "answer must follow a question" rule and the prompt history
+            // would all be computed from a shuffled thread. CreatedAt is the conversation's
+            // real order; Id breaks ties for messages stamped in the same tick.
+            .Include(conversation => conversation.Messages
+                .OrderBy(message => message.CreatedAt)
+                .ThenBy(message => message.Id))
             .ThenInclude(message => message.Citations)
             .FirstOrDefaultAsync(
                 conversation => conversation.TenantId == tenantId

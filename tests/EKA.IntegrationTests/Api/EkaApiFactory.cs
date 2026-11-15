@@ -1,7 +1,13 @@
 using System.Net.Http.Headers;
+using EKA.Application.Abstractions.AI;
+using EKA.Application.Common;
+using EKA.Domain.Common;
 using EKA.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace EKA.IntegrationTests.Api;
@@ -53,6 +59,13 @@ internal sealed class EkaApiFactory(string connectionString) : WebApplicationFac
         // with no key at all (CI). Host settings have the lowest precedence, so a developer's
         // real key in User Secrets still wins locally; it is loaded, and never used.
         builder.UseSetting("Ai:ApiKey", "integration-tests-make-no-ai-calls");
+
+        // The one substitution in an otherwise real application. Everything above the port
+        // (endpoints, handlers, prompt building, persistence) is real; the model is not,
+        // because a test that depends on what a model says is a test that flakes. The real
+        // adapter is proven separately by EKA.AI.Tests' smoke tests.
+        builder.ConfigureTestServices(services =>
+            services.Replace(ServiceDescriptor.Singleton<IChatCompletionService>(Chat)));
     }
 
     /// <summary>
@@ -75,6 +88,55 @@ internal sealed class EkaApiFactory(string connectionString) : WebApplicationFac
         return client;
     }
 
+    /// <summary>The model stand-in: records every prompt, answers or fails on demand.</summary>
+    public RecordingChatService Chat { get; } = new();
+
     /// <summary>A client that presents no identity at all.</summary>
     public HttpClient CreateAnonymousClient() => CreateClient();
+}
+
+/// <summary>
+/// An <see cref="IChatCompletionService"/> that answers deterministically and remembers what
+/// it was asked, so a test can assert on the exact prompt the application assembled.
+/// </summary>
+internal sealed class RecordingChatService : IChatCompletionService
+{
+    private readonly List<IReadOnlyList<ChatTurn>> _prompts = [];
+    private readonly Lock _gate = new();
+
+    public IReadOnlyList<IReadOnlyList<ChatTurn>> Prompts
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _prompts];
+            }
+        }
+    }
+
+    /// <summary>When set, every call fails with this error instead of answering.</summary>
+    public Error? FailWith { get; set; }
+
+    public Task<Result<ChatCompletion>> CompleteAsync(
+        IReadOnlyList<ChatTurn> conversation,
+        CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            _prompts.Add(conversation);
+        }
+
+        // Echo the question, so a test can tell which answer belongs to which question.
+        Result<ChatCompletion> result = FailWith is { } error
+            ? error
+            : new ChatCompletion(
+                $"Answer to: {conversation[^1].Content}",
+                "test.provider",
+                "test-model",
+                new TokenCount(40),
+                new TokenCount(9));
+
+        return Task.FromResult(result);
+    }
 }

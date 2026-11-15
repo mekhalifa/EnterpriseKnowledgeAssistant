@@ -43,13 +43,17 @@ public sealed record ChatTurn(MessageRole Role, string Content);
 
 /// <summary>What the model answered, and what it cost.</summary>
 /// <param name="Content">The answer text.</param>
+/// <param name="Provider">Which service answered, e.g. <c>openrouter.ai</c>. The domain
+/// requires it on every assistant message.</param>
 /// <param name="Model">The model that actually answered, as reported by the provider — a
-/// gateway can route to a different revision than the one requested.</param>
+/// gateway can route to a different revision than the one requested. Falls back to the
+/// configured model only if the provider reports none.</param>
 /// <param name="InputTokens">Prompt tokens, or null if the provider did not report usage.
 /// Null rather than zero: "free" and "unknown" are different facts for a cost report.</param>
 /// <param name="OutputTokens">Completion tokens, or null if unreported.</param>
 public sealed record ChatCompletion(
     string Content,
-    string? Model,
+    string Provider,
+    string Model,
     TokenCount? InputTokens,
     TokenCount? OutputTokens);

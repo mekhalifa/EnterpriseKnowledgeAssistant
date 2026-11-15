@@ -52,4 +52,22 @@ internal sealed class HttpContextCurrentUser : ICurrentUser
             return Guid.TryParse(raw, out var tenantId) ? tenantId : null;
         }
     }
+
+    /// <summary>
+    /// <c>email</c> as OIDC providers send it, or the mapped <see cref="ClaimTypes.Email"/>.
+    /// <c>preferred_username</c> is the fallback because Entra ID often omits <c>email</c>
+    /// for work accounts and puts the UPN there instead.
+    /// </summary>
+    public string? Email => Claim(ClaimTypes.Email, "email") ?? Claim("preferred_username");
+
+    public string? DisplayName => Claim(ClaimTypes.Name, "name");
+
+    private string? Claim(params string[] types)
+    {
+        var principal = _httpContextAccessor.HttpContext?.User;
+
+        return types
+            .Select(type => principal?.FindFirst(type)?.Value)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+    }
 }
