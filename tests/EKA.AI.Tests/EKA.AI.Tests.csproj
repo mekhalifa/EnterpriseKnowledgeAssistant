@@ -10,6 +10,11 @@
     <PackageReference Include="Shouldly" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- AddLogging for the container under test. -->
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <!-- The smoke test reads the key from the API's User Secrets or the environment. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
   </ItemGroup>
 
   <ItemGroup>

@@ -20,7 +20,8 @@ Each step document records what we built, why, the best option, and the alternat
 | 2 | [step-02-domain-model.md](steps/step-02-domain-model.md) | ✅ Complete |
 | 3 | [step-03-persistence.md](steps/step-03-persistence.md) | ✅ Complete |
 | 4 | [step-04-application-api.md](steps/step-04-application-api.md) | ✅ Complete |
-| 5–14 | *created as we reach them* | — |
+| 5 | [step-05-ai-providers.md](steps/step-05-ai-providers.md) | ✅ Complete |
+| 6–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -42,6 +43,8 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0012](adr/0012-vertical-slices-no-mediator.md) | Vertical slices, direct handler injection, no mediator | Accepted |
 | [0013](adr/0013-validation-placement.md) | Shape validation at the edge, stateful rules in the handler | Accepted |
 | [0014](adr/0014-development-authentication.md) | A development authentication scheme until Step 12 | Accepted |
+| [0015](adr/0015-openai-compatible-provider.md) | One OpenAI-compatible adapter; OpenRouter first | Accepted |
+| [0016](adr/0016-application-owns-ai-ports.md) | The application owns its AI ports | Accepted |
 
 ## Project skills
 

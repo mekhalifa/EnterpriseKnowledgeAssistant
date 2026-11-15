@@ -31,6 +31,16 @@ public sealed class ApplicationBoundaryTests
     [InlineData("Microsoft.AspNetCore")]
     [InlineData("Qdrant")]
     [InlineData("Hangfire")]
+    // Step 5. Matching is by prefix, so "OpenAI" does not catch "Azure.AI.OpenAI" and the
+    // SDK's client pipeline (System.ClientModel) — each is listed. Polly or the HTTP
+    // resilience package here would mean retry policy had leaked into use cases.
+    // Microsoft.Extensions.AI is vendor-neutral, and still forbidden: see ADR-0016.
+    [InlineData("OpenAI")]
+    [InlineData("Azure.AI")]
+    [InlineData("System.ClientModel")]
+    [InlineData("Microsoft.Extensions.AI")]
+    [InlineData("Microsoft.Extensions.Http")]
+    [InlineData("Polly")]
     public void Application_does_not_reference_an_infrastructure_package(string forbiddenPrefix)
     {
         var references = Application.GetReferencedAssemblies()

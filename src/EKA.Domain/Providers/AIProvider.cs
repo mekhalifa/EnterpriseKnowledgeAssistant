@@ -80,6 +80,14 @@ public sealed class AIProvider : EntityAudit<Guid>
             throw new DomainException("Azure OpenAI requires an endpoint.");
         }
 
+        // The whole point of an OpenAI-compatible provider is that it lives somewhere other
+        // than api.openai.com. Without an endpoint the SDK would silently send the request —
+        // and the key — to OpenAI instead.
+        if (kind is AIProviderKind.OpenAICompatible && string.IsNullOrWhiteSpace(endpoint))
+        {
+            throw new DomainException("An OpenAI-compatible provider requires an endpoint.");
+        }
+
         Name = name.Trim();
         Kind = kind;
         ChatModel = chatModel.Trim();

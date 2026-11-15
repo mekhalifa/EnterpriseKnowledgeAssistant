@@ -2,41 +2,39 @@
 
 Single source of truth for project state. Updated at the end of every working session.
 
-**Last updated:** 2026-11-12
-**Current step:** Step 4 complete → Step 5 next
-**Overall:** Phase A complete, 4 of 14 steps done
-**Branch:** `step-04-application-api` (branched from `step-03-persistence`; none merged to `main`)
+**Last updated:** 2026-11-15
+**Current step:** Step 5 complete → Step 6 next
+**Overall:** Phase B started, 5 of 14 steps done
+**Branch:** `step-05-ai-providers` (branched from `step-04-application-api`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**Step 5 — AI providers through Microsoft.Extensions.AI.**
+**Step 6 — Prompt templates and the chat API.**
+Exit criterion: *a client creates a conversation, asks a question, and reads back persisted
+messages.*
 
-1. `IChatCompletionService` and an embedding abstraction declared in `EKA.Application`;
-   implemented in `EKA.AI` over `Microsoft.Extensions.AI`. **No provider SDK type may
-   appear in `EKA.Application`** — the boundary test already guards this.
-2. Register `IChatClient` and `IEmbeddingGenerator` for the chosen provider; Factory or
-   keyed services for provider selection, so `AIProvider` rows mean something.
-3. Secrets from User Secrets locally (`Ai:OpenAi:ApiKey`), environment variables in
-   containers. Never `appsettings.json`.
-4. Options pattern with `ValidateOnStart()` for model names, endpoints and dimensions — a
-   wrong embedding dimension must stop the app, not produce garbage vectors.
-5. Resilience pipeline via `Microsoft.Extensions.Http.Resilience`: timeout, retry with
-   jittered backoff, and a circuit breaker. Decorator/middleware shape.
-6. `ErrorType.Provider` → 502 already exists and nothing has used it yet.
-7. A smoke test proving one chat call and one embedding call succeed, skippable without a
-   key configured — and a unit test of the resilience behaviour that needs no key.
+1. **Settle the user-identity decision first** (table below): `Conversation` needs a local
+   `UserId`, and today the only identity is the development scheme's `sub` claim.
+2. Prompt assembly with a **Builder**: active `PromptTemplate` (versioned, already in the
+   domain) → system instruction → windowed history → the new question. Every piece is a
+   `ChatTurn`; document text is never `MessageRole.System`.
+3. **Context-window budgeting** in `TokenCount`, not characters. Needs a token estimate —
+   decide between a real tokenizer (`Microsoft.ML.Tokenizers`) and a conservative
+   character-based estimate.
+4. Use cases as slices: `StartConversation`, `AskQuestion`, `GetConversation`. `AskQuestion`
+   calls `IChatCompletionService` and persists both messages with
+   `ChatCompletion.InputTokens`/`OutputTokens`.
+5. Endpoints through `EKA.Contracts`, tenant from the principal, **conversation ownership
+   checked in the repository query** (another user's conversation is a 404, as for documents).
+6. A provider failure must surface as **502 with `ai.*` code** — the first real use of
+   `ErrorType.Provider`. End-to-end test with a fake `IChatCompletionService` registered in
+   `EkaApiFactory`; no key needed in the integration suite.
+7. Seed one default prompt template (migration or startup seeder — decide).
 
-**Decisions needed first — both blocking, settle before coding:**
-
-| Decision | Recommendation |
-|---|---|
-| Primary provider | **Azure OpenAI** if an Azure subscription is available (private networking, data-residency commitments, enterprise agreement); **OpenAI direct** otherwise, which is faster to start and needs no Azure resource. The abstraction makes this cheap to change; the *configuration shape* is not. |
-| Embedding model + dimension | **`text-embedding-3-small` at 1536 dimensions** unless retrieval quality in Step 11 says otherwise. This fixes the Qdrant collection shape in Step 8 and changing it later forces a full re-index. `AIProvider.EmbeddingDimensions` already records it per provider. |
-
-Reference: [concepts/design-patterns.md](concepts/design-patterns.md) (Adapter, Strategy,
-Decorator, Options), [adr/0002](adr/0002-clean-architecture-layering.md).
+Reference: [concepts/design-patterns.md](concepts/design-patterns.md) (Builder),
+[adr/0016](adr/0016-application-owns-ai-ports.md).
 
 ---
 
@@ -152,6 +150,37 @@ persisted messages", so they belong there. Document upload of actual bytes is St
    string is not configured" guard while plainly configuring one. `UseSetting` writes into
    host configuration, which is present early enough.
 
+### Session 3 — 2026-11-15
+
+#### Step 5 — AI providers through Microsoft.Extensions.AI ✅
+
+- **Exit criterion met against a real provider:** one chat call (`openai/gpt-4o-mini`) and
+  one embedding call (1536 dims) through OpenRouter, via the application's own ports.
+- `IChatCompletionService` / `IEmbeddingService` declared in `EKA.Application` in domain
+  vocabulary, returning `Result<T>`; eight `AiErrors` codes, all → 502.
+- `EKA.AI`: options with `ValidateOnStart()`, a Factory over `AIProviderKind`,
+  `Microsoft.Extensions.AI` middleware (`UseLogging`), and the standard HTTP resilience
+  handler (total timeout → jittered exponential retry → circuit breaker → attempt timeout).
+- **SDK retries disabled** so there is one retry layer, not 4 × 4 = 16 requests per outage.
+- Runtime guards: vector length = configured dimensions, vector count = input count, empty
+  answer = failure.
+- `AIProviderKind.OpenAICompatible` added; the domain requires an endpoint for it.
+- `ApplicationBoundaryTests` now forbids OpenAI, Azure.AI, System.ClientModel,
+  Microsoft.Extensions.AI, Microsoft.Extensions.Http and Polly.
+- **362 tests** (35 in `EKA.AI.Tests`: resilience through the real SDK with a scripted
+  network, no key; 2 smoke tests that skip without one).
+- Decided: [ADR-0015](adr/0015-openai-compatible-provider.md) OpenAI-compatible adapter,
+  OpenRouter first, `text-embedding-3-small` @ 1536;
+  [ADR-0016](adr/0016-application-owns-ai-ports.md) the application owns its AI ports.
+
+**Two things went wrong, both recorded in [step-05](steps/step-05-ai-providers.md):**
+
+1. Every configuration error was reported **twice** in one `AggregateException`: the
+   resilience package's own `ValidateOnStart` ran my `Configure` callback, which resolved
+   the validated `AiOptions` again. Fixed by binding the resilience section directly.
+2. A comment of mine claimed the resilience package validates lazily; the tests showed it
+   validates at startup. Corrected.
+
 ---
 
 ## Step checklist
@@ -162,8 +191,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | 2 | Domain model | ✅ Complete — 191 tests |
 | 3 | Persistence: EF Core + SQL Server in Docker | ✅ Complete — 233 tests |
 | 4 | Application layer + API surface | ✅ Complete — 322 tests |
-| 5 | AI providers via Microsoft.Extensions.AI | ⬜ Next |
-| 6 | Prompt templates + chat API | ⬜ Not started |
+| 5 | AI providers via Microsoft.Extensions.AI | ✅ Complete — 362 tests |
+| 6 | Prompt templates + chat API | ⬜ Next |
 | 7 | Document ingestion | ⬜ Not started |
 | 8 | Chunking + embeddings | ⬜ Not started |
 | 9 | Vector retrieval with ACL filtering | ⬜ Not started |
@@ -179,9 +208,10 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 
 | When | Decision | Options |
 |---|---|---|
-| Step 5 | **Primary AI provider** — blocking | Azure OpenAI (enterprise, private networking) vs OpenAI direct. Recommendation in the next-action block above |
-| Step 5 | **Embedding model + dimension** — blocking | Fixes the Qdrant collection shape in Step 8; changing it later forces a full re-index. `AIProvider.EmbeddingDimensions` records it per provider |
-| Step 6 | Conversation endpoints | Deferred from Step 4 on purpose; they need a local user id, which needs just-in-time user provisioning from the identity provider's subject claim |
+| Step 6 | **Local user identity** — blocking | `Conversation` needs a `UserId`. Just-in-time provisioning of a `User` row from the principal's `sub` + tenant on first request (recommended — it is what Step 12's real IdP needs anyway) vs keying conversations on the raw subject string |
+| Step 6 | Token estimation for the context budget | `Microsoft.ML.Tokenizers` (exact for OpenAI models, wrong for others behind OpenRouter) vs a conservative chars/4 estimate with headroom |
+| Step 6 | Default prompt template | Seeded by migration (versioned with the schema) vs a startup seeder (editable without a migration) |
+| Before real documents | **Data processor approval** | OpenRouter sees prompts and retrieved text ([ADR-0015](adr/0015-openai-compatible-provider.md)). Fine for learning data; decide before anything sensitive is ingested |
 | Step 7 | Background job engine | Hangfire (SQL-backed, dashboard) vs a queue |
 | Step 7 | Unique index on `(TenantId, ContentHash)` | Closes the registration race left open in Step 4. Natural to add with the real upload path |
 | Step 7 | File storage | Local disk / Azure Blob / S3-compatible (MinIO) |
@@ -199,7 +229,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | ACL leak through retrieval | The worst failure mode — one user reading another's documents | Tenant filter inside every repository method (ADR-0009); **proved across HTTP in Step 4** by two-tenant end-to-end tests; vector-query filtering in Step 9; security tests in Step 12 |
 | Embedding dimension change | Forces a full re-index | Recorded per provider and per chunk, so stale vectors are identifiable |
 | Prompt injection via document content | Uploaded documents are untrusted input | `MessageRole` is a trust boundary; tested in Step 10 |
-| Provider cost runaway | Embedding large corpora gets expensive fast | Token budgets, caching, rate limits in Step 12 |
+| Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer, client errors never retried (Step 5, tested); token budgets, caching, rate limits in Step 12 |
+| Third-party data path | OpenRouter sits between us and the model vendor | Learning data only until the decision above is made; switching to OpenAI direct or Azure is configuration (ADR-0015) |
 | Scope creep into agents/GraphRAG | Burns the 12 weeks before the basics work | The out-of-scope list in the learning path |
 | Supply chain via NuGet | A malicious package executes at build time | Source mapping (ADR-0006); `packages.lock.json` at Step 14 |
 
@@ -245,6 +276,23 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 - Architecture tests use `Assembly.GetReferencedAssemblies()`, which the compiler trims to
   references compiled code actually uses.
 - `DocumentAcl` / document-level permissions are not modelled — Step 9.
+- **`AIProvider` rows are not read yet.** The active provider comes from the `Ai`
+  configuration section; the `AIProviders` table and `IAIProviderRepository` are unused.
+  Reconciling the two (or dropping the table) is a decision for Step 12's admin surface.
+- **One provider at a time.** The Factory switches on `Ai:Kind`; two simultaneously live
+  providers would need keyed services. `AzureOpenAI` is rejected at startup until it has an
+  adapter.
+- **The circuit breaker is configured but not covered by a test.** Its default minimum
+  throughput (100 requests in the sampling window) makes a unit test either slow or a test
+  of overridden settings rather than ours. Retry and timeout behaviour are tested.
+- **No provider health check.** A readiness probe that calls the model would cost money on
+  every probe and take instances out of rotation for an upstream outage they cannot fix.
+  Deliberately absent; revisit with Step 14's monitoring.
+- **No streaming.** `IChatCompletionService` returns the whole answer. Step 10 decides
+  whether the UI needs token streaming, which would widen the port (ADR-0016).
+- **Smoke tests make real, billed calls** whenever a key is in User Secrets — fractions of
+  a cent per run, but `dotnet test` is no longer free on a configured machine. Exclude with
+  `--filter Category!=Smoke`.
 - Integration tests require Docker. Without it they fail rather than skip, which is
   deliberate: a silently skipped test suite is worse than a failing one.
 - The IDE's Roslynator analyzer reports RCS1194 and RCS1170 on domain types. Both are

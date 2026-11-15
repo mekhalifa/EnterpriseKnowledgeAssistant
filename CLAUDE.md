@@ -107,6 +107,11 @@ dotnet test                         # all tests; integration needs Docker runnin
 curl http://localhost:5000/api/documents -H "X-EKA-Tenant: 11111111-1111-1111-1111-111111111111"
 dotnet tool restore                 # restore dotnet-ef, pinned in .config/dotnet-tools.json
 
+# AI provider key (OpenRouter by default, ADR-0015). Never in appsettings.json.
+dotnet user-secrets --project src/EKA.Api set "Ai:ApiKey" "<key>"
+dotnet test --filter Category=Smoke    # real, billed provider calls; skip without a key
+dotnet test --filter Category!=Smoke   # everything else; needs no key
+
 # Local SQL Server. Requires deploy/.env (copy deploy/.env.example first).
 docker compose -f deploy/docker-compose.yml up -d
 docker compose -f deploy/docker-compose.yml down       # add -v to drop the data volume

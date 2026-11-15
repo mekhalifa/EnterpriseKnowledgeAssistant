@@ -40,6 +40,8 @@ useful as the current belief.
 | [0012](0012-vertical-slices-no-mediator.md) | Vertical slices with direct handler injection, no mediator | Accepted | 2026-11-12 |
 | [0013](0013-validation-placement.md) | Shape validation at the edge, stateful rules in the handler | Accepted | 2026-11-12 |
 | [0014](0014-development-authentication.md) | A development authentication scheme until an identity provider exists | Accepted | 2026-11-12 |
+| [0015](0015-openai-compatible-provider.md) | One OpenAI-compatible adapter, with OpenRouter as the first endpoint | Accepted | 2026-11-15 |
+| [0016](0016-application-owns-ai-ports.md) | The application owns its AI ports; `IChatClient` stays in the adapter | Accepted | 2026-11-15 |
 
 ## Template
 

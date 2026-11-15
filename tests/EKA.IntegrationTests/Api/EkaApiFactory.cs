@@ -47,6 +47,12 @@ internal sealed class EkaApiFactory(string connectionString) : WebApplicationFac
             connectionString);
 
         builder.UseSetting("Authentication:Development:Enabled", "true");
+
+        // AddAi validates on start and refuses to boot without a key. These tests never call
+        // a model, so a placeholder satisfies the validator and this suite runs on a machine
+        // with no key at all (CI). Host settings have the lowest precedence, so a developer's
+        // real key in User Secrets still wins locally; it is loaded, and never used.
+        builder.UseSetting("Ai:ApiKey", "integration-tests-make-no-ai-calls");
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using EKA.AI;
 using EKA.Api.Endpoints;
 using EKA.Api.Errors;
 using EKA.Api.Security;
@@ -123,6 +124,15 @@ builder.Services.AddApplication();
 // In containers it comes from the environment variable
 // ConnectionStrings__EkaDatabase, and in production from Key Vault.
 builder.Services.AddInfrastructure(builder.Configuration);
+
+// The AI adapters. Validated at startup (ValidateOnStart): a missing Ai:ApiKey or a zero
+// embedding dimension stops the host here rather than failing the first question.
+//
+// The key is a secret and goes in User Secrets, never appsettings.json:
+//   dotnet user-secrets --project src/EKA.Api set "Ai:ApiKey" "<your key>"
+// In containers: the environment variable Ai__ApiKey. Everything else in the "Ai" section
+// is ordinary configuration in appsettings.json. See ADR-0015.
+builder.Services.AddAi(builder.Configuration);
 
 var app = builder.Build();
 

@@ -39,7 +39,28 @@
       version lives in this property and every Microsoft package below references it.
     -->
     <MicrosoftRuntimeVersion>10.0.15</MicrosoftRuntimeVersion>
+    <!--
+      The dotnet/extensions release train (Microsoft.Extensions.AI, Http.Resilience) is
+      versioned separately from the runtime: 10.11.x is a net10-compatible release, NOT a
+      mismatch with 10.0.15. Its 11.0.0 is the same net11 trap described above.
+    -->
+    <MicrosoftExtensionsLibrariesVersion>10.11.0</MicrosoftExtensionsLibrariesVersion>
   </PropertyGroup>
+
+  <ItemGroup Label="AI">
+    <!--
+      Microsoft.Extensions.AI: the provider-neutral IChatClient / IEmbeddingGenerator and
+      the middleware builders (logging, later OpenTelemetry). .AI.OpenAI adapts the
+      official OpenAI SDK to those interfaces; the SDK itself (package "OpenAI") arrives
+      transitively and is pinned here so an upgrade is a deliberate one-line diff.
+      Referenced by EKA.AI only. EKA.Application must never see any of them.
+    -->
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="$(MicrosoftExtensionsLibrariesVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="$(MicrosoftExtensionsLibrariesVersion)" />
+    <PackageVersion Include="OpenAI" Version="2.15.0" />
+    <!-- Timeout, retry with jittered backoff, circuit breaker, as an HttpClient handler. -->
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="$(MicrosoftExtensionsLibrariesVersion)" />
+  </ItemGroup>
 
   <ItemGroup Label="ASP.NET Core">
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="$(MicrosoftRuntimeVersion)" />
@@ -67,6 +88,11 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(MicrosoftRuntimeVersion)" />
+    <!-- Test-side: the provider smoke test reads the key the same way EKA.Api does. -->
+    <PackageVersion Include="Microsoft.Extensions.Configuration.UserSecrets" Version="$(MicrosoftRuntimeVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="$(MicrosoftRuntimeVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="$(MicrosoftRuntimeVersion)" />
   </ItemGroup>
 
   <ItemGroup Label="Persistence">
@@ -102,8 +128,9 @@
   <!--
     Added as the roadmap reaches them, so the dependency surface stays honest:
       Step 4  FluentValidation.DependencyInjectionExtensions
-      Step 5  Microsoft.Extensions.AI, .AI.OpenAI, Azure.AI.OpenAI,
+      Step 5  Microsoft.Extensions.AI, .AI.OpenAI, OpenAI,
               Microsoft.Extensions.Http.Resilience
+              (Azure.AI.OpenAI deliberately not yet: see ADR-0015)
       Step 7  Hangfire.AspNetCore, Hangfire.SqlServer
       Step 8  Qdrant.Client
       Step 14 Serilog.AspNetCore, OpenTelemetry.Extensions.Hosting

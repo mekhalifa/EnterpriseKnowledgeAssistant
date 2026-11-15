@@ -5,7 +5,16 @@
     <ProjectReference Include="..\EKA.Domain\EKA.Domain.csproj" />
   </ItemGroup>
 
-  <PropertyGroup>
-  </PropertyGroup>
+  <!--
+    The only project allowed to see a provider SDK. ApplicationBoundaryTests fails the build
+    if any of these leaks inward.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.AI" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
+    <PackageReference Include="OpenAI" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+  </ItemGroup>
 
 </Project>

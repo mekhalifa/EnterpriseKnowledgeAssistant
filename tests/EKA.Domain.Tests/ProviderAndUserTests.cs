@@ -106,6 +106,18 @@ public sealed class ProviderAndUserTests
     }
 
     [Fact]
+    public void OpenAI_compatible_provider_requires_an_endpoint()
+    {
+        // Without one the SDK would default to api.openai.com and send the request — and
+        // the key meant for another service — to the wrong vendor.
+        var act = () => new AIProvider(
+            Guid.NewGuid(), "openrouter", AIProviderKind.OpenAICompatible, "openai/gpt-4o-mini",
+            "openai/text-embedding-3-small", 1536, "Ai:ApiKey", TestData.Now);
+
+        Should.Throw<DomainException>(act).Message.ShouldContain("endpoint");
+    }
+
+    [Fact]
     public void OpenAI_needs_no_endpoint()
     {
         OpenAI().Endpoint.ShouldBeNull();
