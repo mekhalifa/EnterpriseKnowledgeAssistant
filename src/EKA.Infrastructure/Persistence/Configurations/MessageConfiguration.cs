@@ -26,6 +26,10 @@ internal sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
         builder.Property(message => message.ProviderName).HasMaxLength(128);
         builder.Property(message => message.ModelName).HasMaxLength(256);
 
+        // Nullable by meaning, not by migration convenience: user messages, no-evidence
+        // refusals and pre-Step-11 answers have no template version (see Message).
+        builder.Property(message => message.PromptTemplateVersion);
+
         builder.Property(message => message.CreatedBy).HasMaxLength(256);
         builder.Property(message => message.ModifiedBy).HasMaxLength(256);
 

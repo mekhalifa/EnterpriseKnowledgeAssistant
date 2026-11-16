@@ -1,0 +1,23 @@
+{
+  "metrics": {
+    "answerRate": 1,
+    "citationCorrectness": 1,
+    "groundedness": 1,
+    "refusalCorrectness": 1
+  },
+  "configuration": {
+    "embeddingModel": "openai/text-embedding-3-small",
+    "topK": "5",
+    "minimumScore": "0.6",
+    "chunkTargetTokens": "500",
+    "chunkOverlapTokens": "75",
+    "questions": "30",
+    "chatModel": "openai/gpt-4o-mini",
+    "temperature": "0",
+    "promptTemplateVersion": "2",
+    "judgeModel": "openai/gpt-4o",
+    "judgePromptVersion": "2",
+    "judgeVotes": "1"
+  },
+  "recordedAt": "2026-11-16T09:49:11.0691606+00:00"
+}

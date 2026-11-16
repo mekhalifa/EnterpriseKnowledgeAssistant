@@ -3,41 +3,42 @@
 Single source of truth for project state. Updated at the end of every working session.
 
 **Last updated:** 2026-11-16
-**Current step:** Step 10 complete → Step 11 next
-**Overall:** Phase C in progress, 10 of 14 steps done
-**Branch:** `step-10-grounded-answers` (branched from `step-09-retrieval-acl`; none merged to `main`)
+**Current step:** Step 11 complete → Step 12 next
+**Overall:** Phase C complete, 11 of 14 steps done
+**Branch:** `step-11-evaluation` (branched from `step-10-grounded-answers`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**Step 11 — Evaluation.**
-Exit criterion: *a baseline report exists and regressions fail the build.*
+**First, when the OpenRouter key has credit again (≈ 5 cents):** run the judge calibration with
+three votes, which has not yet passed against the real model (step-11 §5.4):
+`$env:EKA_EVAL_ANSWERS="1"; dotnet test tests/EKA.Evaluation --filter Category=Evaluation`.
+
+**Step 12 — Security and enterprise controls.**
+Exit criterion: *security tests prove unauthorized content cannot be retrieved.*
 
 **Decisions needed first:**
 
 | Decision | Options |
 |---|---|
-| Where the evaluation runs | A test project gated by category (like `Smoke`) vs a separate console tool producing a report; what CI runs on every PR vs nightly |
-| Groundedness scoring | LLM-as-judge (cost, judge bias, needs its own prompt version) vs claim/source overlap heuristics vs human-labelled sample |
-| The question set | Size and source: hand-written against a fixed corpus checked into the repo; expected source per question; include unanswerable and follow-up questions |
-| Regression gate | Absolute thresholds vs "no worse than baseline minus tolerance"; how to keep a stochastic model from flaking the build |
+| Identity provider | Entra ID (the claims the code already reads: `tid`, `groups`) vs Keycloak (local, free, container) vs ASP.NET Core Identity (no SSO) |
+| Who may change document access | Uploader as owner + a tenant admin role vs anyone who can read (today) |
+| Rate limiting and cost control | Per-user token bucket on ask/search (ASP.NET Core rate limiter) vs per-tenant monthly token budget vs both |
+| Development scheme | Deleted with the real provider (ADR-0014 says deleted, not disabled) |
 
 Then:
 
-1. A fixed evaluation corpus (a few Markdown/PDF policies) and a question set with expected
-   documents/sections, unanswerable questions, restricted-document questions, and follow-ups.
-2. Retrieval metrics without any chat call: hit-rate@K, MRR, per-question top source —
-   deterministic given fixed embeddings (cache them to keep runs cheap and repeatable).
-3. Answer metrics: refusal correctness (should refuse / should answer), citation correctness
-   (cited the expected source), groundedness (does the source support the claim — the Step 10
-   taxi over-reach is the first case).
-4. Persist the prompt template version on each answer (open since Step 6) so runs compare.
-5. A baseline report checked in; a gate that fails on regression; tune `Retrieval:MinimumScore`
-   and top-K from the data (ADR-0028 left them as guesses).
+1. JWT bearer with issuer/audience/scope validation; delete `DevelopmentHeader`; tests mint tokens.
+2. Document-level authorization tests over the real token path (cross-tenant, cross-group,
+   forged/expired tokens) — the evaluation's hard rules as security tests.
+3. Groups overage handling; EF global query filters as defence in depth (open decision).
+4. Rate limits and per-tenant token budgets; upload scanning limits; log hygiene (no prompts,
+   no questions, no document text at Information).
+5. A threat model document (OWASP Top 10 for LLM Applications).
 
-Reference: [steps/step-10](steps/step-10-grounded-answers.md) §6 (first observations),
-[adr/0028](adr/0028-retrieval-contract.md), [adr/0029](adr/0029-grounded-answers-refusal-and-citations.md).
+Reference: [adr/0014](adr/0014-development-authentication.md), [adr/0027](adr/0027-document-acl-canonical-keys.md),
+[steps/step-11](steps/step-11-evaluation.md).
 
 ---
 
@@ -363,6 +364,37 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 3. Four Step 6 tests assumed an ungrounded world; they now seed evidence, and "no documents"
    has its own no-model-call test.
 
+#### Step 11 — Evaluation ✅
+
+- **Exit criterion met:** baselines checked in ([retrieval](evaluation/retrieval.md),
+  [answers](evaluation/answers.md)) and the gate proved: raising the score floor to 0.75 by
+  configuration alone failed the ordinary `dotnet test` on four metrics.
+- Decided with the owner ([ADR-0030](adr/0030-two-tier-evaluation-with-baselines.md)): two
+  tiers; LLM judge + exact checks; small fixed corpus; hard rules + tolerance.
+- `tests/EKA.Evaluation`: 5-policy corpus (2 restricted, 1 with a planted instruction), 30
+  questions in six kinds, the real handlers over in-memory stores, real embeddings recorded in
+  `Cache/embeddings.json`.
+- **Tier 1** (every build, free, tolerance 0): hit@1 0.947, hit@3/@5 1.0, MRR 0.974, off-topic
+  refused 1.0. **Floor 0.6 confirmed by data** (off-topic ≤ 0.563, correct top hits ≥ 0.717).
+- **Tier 2** (`EKA_EVAL_ANSWERS=1`, ≈ 5 cents, tolerance 0.10): answer rate, citation correctness,
+  refusal correctness, groundedness all 1.0 under judge v2 (gpt-4o); no canary leaked, no
+  injection obeyed.
+- Production: `Ai:Temperature` (0), `Ai:MaxOutputTokens` (1,000), `AiErrors.QuotaExceeded` (402),
+  `Message.PromptTemplateVersion` (migration `AnswerPromptVersion`), `AddTextExtraction()`.
+- **632 tests** (630 on every run; +1 domain, +2 application, +5 AI, +13 evaluation of which 2 billed).
+
+**Found and fixed, all recorded in [step-11](steps/step-11-evaluation.md):**
+
+1. **A false perfect score:** every judge call failed, and the mean of nothing was reported as
+   groundedness 1.000. Empty now scores 0; an ungraded answer is a hard violation.
+2. **No output cap:** every request reserved 16k tokens of credit, so a low budget refused cheap
+   calls (402), and answers had no ceiling. `Ai:MaxOutputTokens`.
+3. **Running out of credit would have failed documents permanently** (402 → `ai.rejected` →
+   permanent in indexing). Now `ai.quota_exceeded`, transient; validated live when the budget ran out.
+4. **The judge passed the over-reach it exists to catch** (prompt v1). Calibration test added;
+   prompt v2 grades it PARTIAL; single votes still flip ~1 in 5, so calibration takes 3 votes.
+5. Cache inputs differed between tiers (history questions); a recording run compared before saving.
+
 ---
 
 ## Step checklist
@@ -379,8 +411,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | 8 | Chunking + embeddings | ✅ Complete — 477 tests |
 | 9 | Vector retrieval with ACL filtering | ✅ Complete — 578 tests |
 | 10 | RAG answer generation with citations | ✅ Complete — 611 tests |
-| 11 | Evaluation | ⬜ Next |
-| 12 | Security and enterprise controls | ⬜ Not started |
+| 11 | Evaluation | ✅ Complete — 632 tests |
+| 12 | Security and enterprise controls | ⬜ Next |
 | 13 | Angular 21 client | ⬜ Not started |
 | 14 | Deployment and release readiness | ⬜ Not started |
 
@@ -391,14 +423,13 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | When | Decision | Options |
 |---|---|---|
 | Before real documents | **Data processor approval** | OpenRouter sees prompts and retrieved text ([ADR-0015](adr/0015-openai-compatible-provider.md)). Fine for learning data; decide before anything sensitive is ingested |
-| Step 11 | Hybrid search | Dense-only decided for now ([ADR-0028](adr/0028-retrieval-contract.md)); add BM25 + RRF only if the evaluation shows misses on exact terms |
-| Step 11 | Top-K and score floor | 5 / 0.6 normalized are starting values; real-stack scores of related passages were 0.62–0.80 |
+| Later | Hybrid search | Dense-only; the evaluation shows no exact-term misses on the current set ([ADR-0028](adr/0028-retrieval-contract.md)). Add identifier-heavy questions before deciding |
+| When budget allows | Three judge votes in the full answer run | Single votes flip toward leniency ~1 in 5 on borderline answers; re-baseline when switching ([ADR-0030](adr/0030-two-tier-evaluation-with-baselines.md)) |
+| Before relying on tier 2 | Harder evaluation questions | Every tier-2 metric is 1.0: no headroom. Add multi-step, numeric and conflicting-source questions |
 | Step 12 | Who may change a document's access | Today anyone who can read it ([ADR-0027](adr/0027-document-acl-canonical-keys.md)); roles (owner / admin) with the identity provider |
 | Step 12 | Grants table vs JSON column | JSON column suffices until an admin report needs "everything group X can read" |
-| Step 11 | Chunk size and algorithm | 500/75 section-aware is a starting point; compare against semantic or parent/child with evidence ([ADR-0024](adr/0024-section-aware-chunking-deterministic-point-ids.md)) |
-| Step 11 | Persist the prompt template version on each answer | Reported in `AskQuestionResponse` today, not stored; evaluation will need it ([ADR-0019](adr/0019-prompt-templates-seeded-by-migration.md)) |
-| Step 11 | Follow-up retrieval | Raw question today ([ADR-0029](adr/0029-grounded-answers-refusal-and-citations.md)); add LLM query rewriting if the follow-up hit rate is poor |
-| Step 11 | Groundedness check | Cited ≠ supported (the taxi over-reach, step-10 §6): measure first; a verification pass or stricter instruction only if common |
+| With a real corpus | Chunk size and algorithm | 500/75 section-aware is unchallenged by the synthetic set (sections are short). Compare semantic or parent/child on long real documents; the evaluation can now measure it ([ADR-0024](adr/0024-section-aware-chunking-deterministic-point-ids.md)) |
+| Later | Follow-up retrieval | One pronoun follow-up ranks 2nd (q29). Add more follow-ups to the set before paying for LLM query rewriting ([ADR-0029](adr/0029-grounded-answers-refusal-and-citations.md)) |
 | Step 13 | Streaming and citations | Marker extraction needs the whole answer; stream text, then send citations at the end |
 | Step 12 | Identity provider | Entra ID vs Keycloak vs ASP.NET Core Identity |
 | Step 12 | EF global query filters | As *defence in depth* on top of explicit tenant parameters, not instead of them — see ADR-0009 |
@@ -417,7 +448,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | Cross-tenant vector query | Qdrant isolation is a payload filter, not a boundary | A search filter without a tenant is refused before I/O; every hit re-checked in SQL; proved with identical documents in two tenants (Step 9) |
 | Access-payload drift | The Qdrant copy of access keys can lag SQL | Fails closed (SQL re-check); "dropped by the SQL re-check" logged per search; reconciliation job if it stays above zero |
 | Prompt injection via document content | Uploaded documents are untrusted input | Document text only in the user turn, inside `<source>` delimiters it cannot forge (tested); v2 instruction treats sources as data; a planted instruction was ignored by gpt-4o-mini on the real stack (Step 10). Model compliance is not guaranteed — add injection cases to Step 11's set |
-| Cited but unsupported answers | A correct citation can sit on an over-reaching claim | Observed on the real stack (step-10 §6); measured as groundedness in Step 11 |
+| Cited but unsupported answers | A correct citation can sit on an over-reaching claim | Measured as groundedness by a calibrated judge (Step 11); temperature 0 removed the observed case; single-vote judge can miss a borderline one |
+| Evaluation spend | Billed evaluation and smoke runs draw on a personal key's weekly limit | Tier 2 is opt-in (`EKA_EVAL_ANSWERS=1`); output capped; this step exhausted the limit twice — fund a separate evaluation key before CI runs tier 2 |
 | Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer, client errors never retried (Step 5, tested); token budgets, caching, rate limits in Step 12 |
 | Third-party data path | OpenRouter sits between us and the model vendor | Learning data only until the decision above is made; switching to OpenAI direct or Azure is configuration (ADR-0015) |
 | Scope creep into agents/GraphRAG | Burns the 12 weeks before the basics work | The out-of-scope list in the learning path |
@@ -477,12 +509,19 @@ persisted messages", so they belong there. Document upload of actual bytes is St
   load the thread, both append, both save — interleaving Q1 Q2 A1 A2. No concurrency token
   on `Conversation` yet; a `rowversion` would turn the second into a 409.
 - **Profile claims are copied at first contact and never refreshed** (email, display name).
-- **The prompt template version is reported, not persisted** on the answer.
 - **Archiving has no endpoint**, so the domain's "archived conversations accept no messages"
   rule is unreachable over HTTP. It throws `DomainException` (500), not
   `InvalidStateTransitionException` (409) — fix before an archive endpoint ships.
-- **A citation proves provenance, not support.** It names the chunk the model pointed at;
-  whether that chunk backs the sentence is unmeasured until Step 11.
+- **A citation proves provenance, not support.** Groundedness is measured offline by the
+  evaluation's judge (Step 11), not checked per answer in production.
+- **The evaluation set is small, synthetic and Markdown-only,** with every tier-2 metric at 1.0:
+  it detects breakage, not fine differences. No PDF or DOCX in the corpus.
+- **The three-vote judge calibration has not yet passed against the real model** (the budget ran
+  out while measuring the single-vote flip rate). First item when the key has credit.
+- **Tier 1 searches exactly** (in memory), while production uses Qdrant's approximate HNSW. They
+  agree at this size.
+- **The embedding cache must be re-recorded** (`EKA_EVAL_RECORD=1`, needs a key) after changing
+  the corpus, the questions, the chunker, the embedding input format or the model.
 - **A model's own refusal is recognised only by citing nothing** (`grounding = uncited`); a
   hedged cited answer and a correct uncited one are not told apart.
 - **Follow-ups without meaning of their own retrieve poorly** ("can I carry those over?"):

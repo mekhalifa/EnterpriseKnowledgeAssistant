@@ -337,6 +337,21 @@ public sealed class IndexDocumentHandlerTests
     }
 
     [Fact]
+    public async Task Running_out_of_provider_credit_waits_for_a_retry_instead_of_failing_the_document()
+    {
+        // Found in Step 11: a 402 used to arrive as ai.rejected, which this handler treats as
+        // permanent. Every document in flight when the budget ran out would have been Failed for
+        // good, instead of resuming after a top-up.
+        var document = await ExtractedDocument(sections: 3);
+        _embeddings.FailOnCall = (1, AiErrors.QuotaExceeded);
+
+        var thrown = await Should.ThrowAsync<EmbeddingUnavailableException>(() => Handler().HandleAsync(For(document)));
+
+        thrown.Error.ShouldBe(AiErrors.QuotaExceeded);
+        document.Status.ShouldBe(IngestionStatus.Embedding);
+    }
+
+    [Fact]
     public async Task A_provider_refusal_fails_the_document_and_leaves_no_vectors_behind()
     {
         var document = await ExtractedDocument(sections: 5);

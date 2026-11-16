@@ -46,6 +46,38 @@ public sealed class AiOptions
     /// </summary>
     public int EmbeddingDimensions { get; set; }
 
+    /// <summary>
+    /// Sampling temperature for chat completions (Step 11). Null leaves the provider's default
+    /// (1.0 for OpenAI models).
+    /// </summary>
+    /// <remarks>
+    /// The shipped configuration sets 0. Grounded answers should vary as little as possible:
+    /// the same question over the same sources should get the same answer. And evaluation
+    /// should measure the configuration that answers users, not a calmer one set up for
+    /// testing. Zero reduces variance; it does not remove it, because providers are not
+    /// bit-for-bit deterministic, which is why the evaluation gate has a tolerance.
+    /// </remarks>
+    public float? Temperature { get; set; }
+
+    /// <summary>
+    /// The most tokens one chat answer may produce (Step 11). Null leaves the model's maximum.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>A cost control, not a style choice.</b> Without it, every request asks for the model's
+    /// maximum output (16,384 tokens for gpt-4o). OpenRouter reserves credit for that maximum
+    /// before answering, so a nearly spent budget refuses requests it could easily afford.
+    /// That is how this was found: the evaluation's judge calls were refused with 402. It also
+    /// puts a ceiling on a runaway answer.
+    /// </para>
+    /// <para>
+    /// The shipped configuration sets 1,000: grounded answers here run to a few sentences
+    /// (under 120 tokens in the evaluation), and a cut-off answer is visible and fixable, while
+    /// an unbounded one is a bill.
+    /// </para>
+    /// </remarks>
+    public int? MaxOutputTokens { get; set; }
+
     public AiResilienceOptions Resilience { get; set; } = new();
 }
 

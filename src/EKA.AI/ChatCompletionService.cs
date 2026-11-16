@@ -27,6 +27,12 @@ internal sealed partial class ChatCompletionService(
 {
     private readonly string _configuredModel = options.Value.ChatModel;
 
+    /// <summary>Null when neither is configured: then the provider's defaults apply.</summary>
+    private readonly Microsoft.Extensions.AI.ChatOptions? _requestOptions =
+        options.Value.Temperature is null && options.Value.MaxOutputTokens is null
+            ? null
+            : new() { Temperature = options.Value.Temperature, MaxOutputTokens = options.Value.MaxOutputTokens };
+
     /// <summary>
     /// The host the requests go to, so a stored answer says which service wrote it:
     /// <c>openrouter.ai</c>, <c>api.openai.com</c>, <c>localhost</c>.
@@ -50,7 +56,8 @@ internal sealed partial class ChatCompletionService(
         try
         {
             response = await chatClient
-                .GetResponseAsync(messages, options: null, cancellationToken)
+                // A fresh copy per call: the client pipeline may mutate the options it is given.
+                .GetResponseAsync(messages, _requestOptions?.Clone(), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)

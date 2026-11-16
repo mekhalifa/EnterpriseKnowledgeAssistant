@@ -37,6 +37,49 @@ public sealed class AdapterTests
     }
 
     [Fact]
+    public async Task A_configured_temperature_reaches_the_wire_and_an_absent_one_is_not_sent()
+    {
+        var handler = new ScriptedHandler()
+            .Then(HttpStatusCode.OK, ScriptedHandler.ChatJson("a"))
+            .Then(HttpStatusCode.OK, ScriptedHandler.ChatJson("b"));
+
+        await using (var withZero = AiTestHost.Build(handler, settings => settings["Ai:Temperature"] = "0"))
+        {
+            await withZero.GetRequiredService<IChatCompletionService>().CompleteAsync([new ChatTurn(MessageRole.User, "q")]);
+        }
+
+        await using (var unset = AiTestHost.Build(handler))
+        {
+            await unset.GetRequiredService<IChatCompletionService>().CompleteAsync([new ChatTurn(MessageRole.User, "q")]);
+        }
+
+        handler.RequestBodies[0].ShouldContain("\"temperature\":0");
+        handler.RequestBodies[1].ShouldNotContain("temperature");
+    }
+
+    [Fact]
+    public async Task A_configured_output_cap_reaches_the_wire()
+    {
+        // Without one, every request reserves the model's maximum output, and a provider that
+        // pre-authorizes credit refuses requests it could easily afford (step-11).
+        var handler = new ScriptedHandler().Then(HttpStatusCode.OK, ScriptedHandler.ChatJson("a"));
+        await using var provider = AiTestHost.Build(handler, settings => settings["Ai:MaxOutputTokens"] = "1000");
+
+        await provider.GetRequiredService<IChatCompletionService>().CompleteAsync([new ChatTurn(MessageRole.User, "q")]);
+
+        handler.RequestBodies.Single().ShouldMatch("\"max_(completion_)?tokens\":1000");
+    }
+
+    [Theory]
+    [InlineData("-0.1")]
+    [InlineData("2.5")]
+    public void A_temperature_the_provider_would_reject_stops_startup(string temperature)
+    {
+        AiTestHost.StartupFailures(settings => settings["Ai:Temperature"] = temperature)
+            .ShouldContain(failure => failure.Contains("Temperature"));
+    }
+
+    [Fact]
     public async Task A_chat_reply_with_no_text_is_a_provider_error_not_a_blank_answer()
     {
         var handler = new ScriptedHandler().Then(HttpStatusCode.OK, ScriptedHandler.ChatJson(""));

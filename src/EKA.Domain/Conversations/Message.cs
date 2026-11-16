@@ -70,6 +70,17 @@ public sealed class Message : EntityAudit<Guid>
     /// </summary>
     public string? ModelName { get; private set; }
 
+    /// <summary>
+    /// The prompt template version that produced an assistant message (Step 11). Null for user
+    /// messages, for no-evidence refusals (no prompt was sent), and for answers older than
+    /// Step 11.
+    /// </summary>
+    /// <remarks>
+    /// The model name says who wrote an answer. This says what they were told. When evaluation
+    /// shows a change in quality, both are needed to tell a model change from a prompt change.
+    /// </remarks>
+    public int? PromptTemplateVersion { get; private set; }
+
     public IReadOnlyCollection<Citation> Citations => _citations.AsReadOnly();
 
     /// <summary>
@@ -94,11 +105,17 @@ public sealed class Message : EntityAudit<Guid>
         string modelName,
         DateTimeOffset createdAt,
         IEnumerable<Citation>? citations = null,
-        TokenCount? tokenCount = null)
+        TokenCount? tokenCount = null,
+        int? promptTemplateVersion = null)
     {
         if (string.IsNullOrWhiteSpace(providerName))
         {
             throw new DomainException("An assistant message must record its provider.");
+        }
+
+        if (promptTemplateVersion is < 1)
+        {
+            throw new DomainException($"Prompt template versions start at 1; got {promptTemplateVersion}.");
         }
 
         if (string.IsNullOrWhiteSpace(modelName))
@@ -111,6 +128,7 @@ public sealed class Message : EntityAudit<Guid>
             ProviderName = providerName.Trim(),
             ModelName = modelName.Trim(),
             TokenCount = tokenCount,
+            PromptTemplateVersion = promptTemplateVersion,
         };
 
         if (citations is not null)

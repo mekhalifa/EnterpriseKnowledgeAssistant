@@ -161,7 +161,8 @@ public sealed class AskQuestionHandler(
                 completion.Value.Model,
                 timeProvider.GetUtcNow(),
                 citations: extracted.Cited.Select(ToCitation),
-                tokenCount: completion.Value.OutputTokens);
+                tokenCount: completion.Value.OutputTokens,
+                promptTemplateVersion: prompt.Value.TemplateVersion);
 
             grounding = extracted.Cited.Count > 0 ? GroundingCited : GroundingUncited;
             promptTokens = completion.Value.InputTokens?.Value;

@@ -251,6 +251,15 @@ public sealed class ConversationHandlerTests
         var stored = _conversations.All.Single().Messages.Last();
         stored.IsUngrounded.ShouldBeFalse();
         stored.Citations.ShouldHaveSingleItem().Number.ShouldBe(1);
+        stored.PromptTemplateVersion.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_refusal_records_no_template_version_because_no_prompt_was_sent()
+    {
+        await AskAsync("Anything?", Alice with { TenantId = TestData.OtherTenant });
+
+        _conversations.All.Single().Messages.Last().PromptTemplateVersion.ShouldBeNull();
     }
 
     [Fact]

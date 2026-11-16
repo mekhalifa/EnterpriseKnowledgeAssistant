@@ -74,6 +74,9 @@ public sealed class ResilienceTests
     [InlineData(HttpStatusCode.Forbidden, "ai.authentication_failed")]
     [InlineData(HttpStatusCode.BadRequest, "ai.rejected")]
     [InlineData(HttpStatusCode.NotFound, "ai.rejected")]
+    // Out of credit: not retried now (it will not heal within a request), and not "rejected",
+    // which indexing treats as permanent (Step 11).
+    [InlineData(HttpStatusCode.PaymentRequired, "ai.quota_exceeded")]
     public async Task A_client_error_is_not_retried(HttpStatusCode status, string expectedCode)
     {
         // A wrong key or an unknown model fails identically on every attempt. Retrying it

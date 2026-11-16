@@ -55,6 +55,7 @@ useful as the current belief.
 | [0027](0027-document-acl-canonical-keys.md) | Document access as canonical principal keys, filtered inside the vector query and re-checked in SQL | Accepted | 2026-11-16 |
 | [0028](0028-retrieval-contract.md) | The retrieval contract: dense-only, configured top-K and floor, over-fetch, empty as success | Accepted | 2026-11-16 |
 | [0029](0029-grounded-answers-refusal-and-citations.md) | Grounded answers: two-layer refusal, numbered citation markers, the raw question for retrieval | Accepted | 2026-11-16 |
+| [0030](0030-two-tier-evaluation-with-baselines.md) | Two-tier evaluation: recorded embeddings gate every build, a calibrated LLM judge gates billed runs | Accepted | 2026-11-16 |
 
 ## Template
 

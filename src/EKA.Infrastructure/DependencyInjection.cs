@@ -122,11 +122,7 @@ public static class DependencyInjection
         services.AddOptions<FileStorageOptions>().Bind(configuration.GetSection(FileStorageOptions.SectionName));
         services.AddSingleton<IFileStorage, LocalFileStorage>();
 
-        // The chain, in order. The first extractor that claims a type wins, so a more
-        // specific extractor must be registered before a more general one.
-        services.AddSingleton<ITextExtractor, PdfTextExtractor>();
-        services.AddSingleton<ITextExtractor, DocxTextExtractor>();
-        services.AddSingleton<ITextExtractor, PlainTextExtractor>();
+        services.AddTextExtraction();
 
         // The API enqueues IngestionJobs by type, in an expression Hangfire serializes, and
         // never resolves it. Only the worker does, so IngestionJobs is registered by
@@ -153,6 +149,27 @@ public static class DependencyInjection
                     // wait for extraction short, at the cost of one cheap query per second.
                     QueuePollInterval = TimeSpan.FromSeconds(1),
                 }));
+    }
+
+    /// <summary>
+    /// The extractor chain alone: no database, no storage, no jobs.
+    /// </summary>
+    /// <remarks>
+    /// Public since Step 11, so the evaluation harness reads its corpus through exactly the
+    /// extractors production uses, without making them public or standing up SQL Server.
+    /// <see cref="AddInfrastructure"/> calls it too, so there is one list, not two.
+    /// </remarks>
+    public static IServiceCollection AddTextExtraction(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        // The chain, in order. The first extractor that claims a type wins, so a more
+        // specific extractor must be registered before a more general one.
+        services.AddSingleton<ITextExtractor, PdfTextExtractor>();
+        services.AddSingleton<ITextExtractor, DocxTextExtractor>();
+        services.AddSingleton<ITextExtractor, PlainTextExtractor>();
+
+        return services;
     }
 
     /// <summary>

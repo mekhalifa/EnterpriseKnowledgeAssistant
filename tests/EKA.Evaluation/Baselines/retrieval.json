@@ -1,0 +1,18 @@
+{
+  "metrics": {
+    "hitAt1": 0.9474,
+    "hitAt3": 1,
+    "hitAtK": 1,
+    "mrr": 0.9737,
+    "offTopicNoEvidence": 1
+  },
+  "configuration": {
+    "embeddingModel": "openai/text-embedding-3-small",
+    "topK": "5",
+    "minimumScore": "0.6",
+    "chunkTargetTokens": "500",
+    "chunkOverlapTokens": "75",
+    "questions": "30"
+  },
+  "recordedAt": "2026-11-16T09:42:55.8407556+00:00"
+}

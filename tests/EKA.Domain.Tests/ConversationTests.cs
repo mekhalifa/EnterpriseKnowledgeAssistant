@@ -292,6 +292,13 @@ public sealed class ConversationTests
     }
 
     [Fact]
+    public void A_prompt_template_version_starts_at_one()
+    {
+        Should.Throw<DomainException>(() => Message.FromAssistant(
+            Guid.NewGuid(), Guid.NewGuid(), "a", "p", "m", TestData.Now, promptTemplateVersion: 0));
+    }
+
+    [Fact]
     public void A_citation_marker_starts_at_one()
     {
         Should.Throw<DomainException>(() => Cite(Guid.NewGuid(), 0, 0.9, number: 0));

@@ -12,6 +12,7 @@
     <Project Path="tests/EKA.AI.Tests/EKA.AI.Tests.csproj" />
     <Project Path="tests/EKA.Application.Tests/EKA.Application.Tests.csproj" />
     <Project Path="tests/EKA.Domain.Tests/EKA.Domain.Tests.csproj" />
+    <Project Path="tests/EKA.Evaluation/EKA.Evaluation.csproj" />
     <Project Path="tests/EKA.IntegrationTests/EKA.IntegrationTests.csproj" />
   </Folder>
 </Solution>

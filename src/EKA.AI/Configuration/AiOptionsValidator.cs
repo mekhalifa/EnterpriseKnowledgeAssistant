@@ -97,6 +97,18 @@ internal sealed class AiOptionsValidator : IValidateOptions<AiOptions>
                 + "a wrong value produces vectors that cannot be compared with stored ones.");
         }
 
+        // 0..2 is the range OpenAI-compatible APIs accept. Outside it the provider answers 400
+        // on every question, which is a configuration error to catch at startup instead.
+        if (options.Temperature is { } temperature && (float.IsNaN(temperature) || temperature is < 0f or > 2f))
+        {
+            failures.Add($"{section}:Temperature must be between 0 and 2, or absent for the provider default (got {temperature}).");
+        }
+
+        if (options.MaxOutputTokens is < 16 or > 32_768)
+        {
+            failures.Add($"{section}:MaxOutputTokens must be between 16 and 32768, or absent for the model's maximum (got {options.MaxOutputTokens}).");
+        }
+
         ValidateResilience(options.Resilience, $"{section}:Resilience", failures);
 
         return failures.Count == 0

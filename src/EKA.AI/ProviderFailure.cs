@@ -52,6 +52,9 @@ internal static class ProviderFailure
                 BrokenCircuitException => AiErrors.CircuitOpen,
                 ClientResultException { Status: 401 or 403 } => AiErrors.AuthenticationFailed,
                 ClientResultException { Status: 429 } => AiErrors.RateLimited,
+                // Before the >= 400 catch-all: out of credit is a state that heals, not a refusal
+                // of this input (see AiErrors.QuotaExceeded). Found by Step 11's first judge run.
+                ClientResultException { Status: 402 } => AiErrors.QuotaExceeded,
                 ClientResultException { Status: 408 or 504 } => AiErrors.Timeout,
                 ClientResultException { Status: >= 500 } => AiErrors.Unavailable,
                 ClientResultException { Status: >= 400 } => AiErrors.Rejected,

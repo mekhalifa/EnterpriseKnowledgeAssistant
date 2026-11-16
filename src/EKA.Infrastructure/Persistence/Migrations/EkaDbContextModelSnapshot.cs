@@ -92,6 +92,9 @@ namespace EKA.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<int?>("PromptTemplateVersion")
+                        .HasColumnType("int");
+
                     b.Property<string>("ProviderName")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");

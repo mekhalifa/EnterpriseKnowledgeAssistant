@@ -45,6 +45,19 @@ public static class AiErrors
         "ai.authentication_failed",
         "The AI provider rejected the service's credentials.");
 
+    /// <summary>
+    /// 402 from upstream: the account is out of credit, or the request's reserved output does
+    /// not fit what is left (Step 11).
+    /// </summary>
+    /// <remarks>
+    /// Not <see cref="Rejected"/>, because the difference changes what callers do. Indexing
+    /// treats a rejection as permanent and fails the document. Running out of credit heals when
+    /// someone tops up, so a document must wait and retry, not be marked Failed for good.
+    /// </remarks>
+    public static readonly Error QuotaExceeded = Error.Provider(
+        "ai.quota_exceeded",
+        "The AI provider's usage limit for this service has been reached.");
+
     public static readonly Error Rejected = Error.Provider(
         "ai.rejected",
         "The AI provider rejected the request.");

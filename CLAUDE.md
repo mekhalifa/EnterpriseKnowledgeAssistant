@@ -114,6 +114,12 @@ dotnet user-secrets --project src/EKA.Api set "Ai:ApiKey" "<key>"
 dotnet test --filter Category=Smoke    # real, billed provider calls; skip without a key
 dotnet test --filter Category!=Smoke   # everything else; needs no key
 
+# Evaluation (Step 11, ADR-0030). Tier 1 (retrieval, free, cached embeddings) runs in every
+# `dotnet test` and fails on any drop below tests/EKA.Evaluation/Baselines. Tier 2 is billed:
+$env:EKA_EVAL_ANSWERS="1"; dotnet test tests/EKA.Evaluation --filter Category=Evaluation
+$env:EKA_EVAL_RECORD="1"            # re-record embeddings after changing corpus/questions/chunker/model
+$env:EKA_EVAL_UPDATE_BASELINE="1"   # accept new numbers deliberately; reports go to docs/evaluation/
+
 # Ingestion worker (Step 7). Same connection string as the API, in its OWN user secrets.
 # Both processes share file storage: %LOCALAPPDATA%/EKA/files unless Storage:RootPath is set.
 dotnet user-secrets --project src/EKA.Ingestion.Worker set "ConnectionStrings:EkaDatabase" "<connection string>"

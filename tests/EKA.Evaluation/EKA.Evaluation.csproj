@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+    <!-- The billed tier reads the key from the API's User Secrets or the environment, like the smoke tests. -->
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The evaluation composes the real use cases (Application), the real extractors and the
+      shipped prompt (Infrastructure), and the real model adapters (AI). Nothing in src
+      references this project.
+    -->
+    <ProjectReference Include="..\..\src\EKA.Application\EKA.Application.csproj" />
+    <ProjectReference Include="..\..\src\EKA.Infrastructure\EKA.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\EKA.AI\EKA.AI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Read from the source tree at run time, not copied: recording writes back to them. -->
+    <None Include="Corpus\**\*;Questions\**\*;Baselines\**\*;Cache\**\*" />
+  </ItemGroup>
+
+</Project>

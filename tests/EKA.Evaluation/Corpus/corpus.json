@@ -1,0 +1,15 @@
+{
+  "description": "A fixed evaluation corpus: five synthetic policies of a fictional company. Never edit a document without re-recording the embedding cache (EKA_EVAL_RECORD=1) and reviewing the baseline change.",
+  "documents": [
+    { "key": "leave-policy", "file": "leave-policy.md", "title": "Leave policy", "access": [ "tenant" ] },
+    { "key": "remote-work", "file": "remote-work.md", "title": "Remote work policy", "access": [ "tenant" ] },
+    { "key": "it-security", "file": "it-security.md", "title": "IT security policy", "access": [ "tenant" ] },
+    { "key": "travel-expenses", "file": "travel-expenses.md", "title": "Travel and expenses policy", "access": [ "group:finance" ] },
+    { "key": "salary-bands", "file": "salary-bands.md", "title": "Salary bands", "access": [ "group:hr" ] }
+  ],
+  "callers": {
+    "employee": [],
+    "finance": [ "finance" ],
+    "hr": [ "hr" ]
+  }
+}
