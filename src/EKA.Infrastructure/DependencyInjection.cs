@@ -1,6 +1,8 @@
 using EKA.Application.Abstractions;
 using EKA.Application.Abstractions.Ingestion;
 using EKA.Application.Abstractions.Retrieval;
+using EKA.Application.Abstractions.Usage;
+using EKA.Infrastructure.Usage;
 using EKA.Infrastructure.Extraction;
 using EKA.Infrastructure.Jobs;
 using EKA.Infrastructure.Storage;
@@ -107,6 +109,10 @@ public static class DependencyInjection
         services.AddScoped<IAIProviderRepository, AIProviderRepository>();
         services.AddScoped<IChunkReader, ChunkReader>();
 
+        // Step 12: per-tenant token usage. Singleton over the connection string, with its own
+        // short-lived connections (see SqlTokenUsageLedger for why not the DbContext).
+        services.AddSingleton<ITokenUsageLedger>(new SqlTokenUsageLedger(connectionString));
+
         AddIngestion(services, configuration, connectionString);
         AddVectorStore(services, configuration);
 
@@ -123,6 +129,11 @@ public static class DependencyInjection
         services.AddSingleton<IFileStorage, LocalFileStorage>();
 
         services.AddTextExtraction();
+        services.AddOptions<ExtractionLimits>().Bind(configuration.GetSection(ExtractionLimits.SectionName));
+
+        // Step 12: the scanning port, with the explicit no-scanner adapter until a real one is
+        // chosen at deployment. Swap this line for ClamAV or a cloud scanner.
+        services.AddSingleton<IMalwareScanner, NoMalwareScanner>();
 
         // The API enqueues IngestionJobs by type, in an expression Hangfire serializes, and
         // never resolves it. Only the worker does, so IngestionJobs is registered by
@@ -162,6 +173,9 @@ public static class DependencyInjection
     public static IServiceCollection AddTextExtraction(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        // Step 12 limits. Defaults here; AddInfrastructure binds the Extraction section over them.
+        services.AddOptions<ExtractionLimits>();
 
         // The chain, in order. The first extractor that claims a type wins, so a more
         // specific extractor must be registered before a more general one.

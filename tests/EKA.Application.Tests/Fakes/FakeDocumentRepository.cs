@@ -106,7 +106,7 @@ internal sealed class FakeDocumentRepository : IDocumentRepository
     {
         // The domain's own rule, which the SQL implementation re-expresses in its WHERE clause.
         var matching = _documents
-            .Where(document => document.IsAccessibleTo(caller))
+            .Where(document => document.IsVisibleTo(caller))
             .Where(document => status is null || document.Status == status)
             .ToList();
 

@@ -3,6 +3,7 @@ using EKA.Application.Abstractions.AI;
 using EKA.Application.Common;
 using EKA.Application.Identity;
 using EKA.Application.Retrieval;
+using EKA.Application.Usage;
 using EKA.Contracts.Conversations;
 using EKA.Domain.Conversations;
 using EKA.Domain.Prompting;
@@ -56,6 +57,7 @@ public sealed class AskQuestionHandler(
     IConversationRepository conversations,
     IPromptTemplateRepository templates,
     ChunkRetriever retriever,
+    TokenBudget budget,
     IChatCompletionService chat,
     PromptBuilder promptBuilder,
     IUnitOfWork unitOfWork,
@@ -104,6 +106,14 @@ public sealed class AskQuestionHandler(
                 + $"{PromptTemplate.ContextPlaceholder} placeholder and cannot produce grounded answers.");
         }
 
+        // Step 12: a spent monthly budget stops the turn before any provider call. Checked after
+        // the cheap checks (conversation, template), so a wrong id is still a 404, not a 429.
+        var available = await budget.EnsureAvailableAsync(command.Caller.TenantId, cancellationToken).ConfigureAwait(false);
+        if (available.IsFailure)
+        {
+            return available.Error;
+        }
+
         var askedAt = timeProvider.GetUtcNow();
 
         var retrieved = await retriever
@@ -148,6 +158,9 @@ public sealed class AskQuestionHandler(
                 // Nothing has been added to the aggregate, so there is nothing to undo.
                 return completion.Error;
             }
+
+            await budget.RecordChatAsync(command.Caller.TenantId, completion.Value, prompt.Value.EstimatedTokens.Value, cancellationToken)
+                .ConfigureAwait(false);
 
             var extracted = CitationMarkers.Extract(completion.Value.Content, prompt.Value.Sources);
 

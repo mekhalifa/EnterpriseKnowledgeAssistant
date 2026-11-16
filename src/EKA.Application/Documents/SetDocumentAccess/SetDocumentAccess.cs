@@ -19,10 +19,10 @@ public sealed record SetDocumentAccessCommand(AccessScope Caller, Guid DocumentI
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Who may change access: anyone who can read the document.</b> Until Step 12 brings roles
-/// there is no "owner" or "administrator" to defer to. The rule that matters now is the
-/// negative one: a caller who cannot read a document cannot grant themselves access to it,
-/// because to them it does not exist (404).
+/// <b>Who may change access: the document's owner, or a tenant administrator</b> (Step 12,
+/// ADR-0031). A reader who is neither gets 403. A caller who cannot see the document at all
+/// gets 404, so they cannot grant themselves access to something that, to them, does not exist.
+/// An administrator can also rescue a document whose list locks everyone out.
 /// </para>
 /// <para>
 /// <b>Two stores, and this time the copy goes first.</b> The opposite of delete, and for the
@@ -59,9 +59,9 @@ public sealed class SetDocumentAccessHandler(
             .GetByIdAsync(command.Caller.TenantId, command.DocumentId, cancellationToken)
             .ConfigureAwait(false);
 
-        if (document is null || !document.IsAccessibleTo(command.Caller))
+        if (DocumentAuthorization.CannotManage(document, command.Caller, command.DocumentId, out var error))
         {
-            return DocumentErrors.NotFound(command.DocumentId);
+            return error;
         }
 
         DocumentAccess access;

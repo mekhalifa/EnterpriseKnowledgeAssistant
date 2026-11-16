@@ -3,9 +3,9 @@
 Single source of truth for project state. Updated at the end of every working session.
 
 **Last updated:** 2026-11-16
-**Current step:** Step 11 complete → Step 12 next
-**Overall:** Phase C complete, 11 of 14 steps done
-**Branch:** `step-11-evaluation` (branched from `step-10-grounded-answers`; none merged to `main`)
+**Current step:** Step 12 complete → Step 13 next
+**Overall:** Phase C complete, 12 of 14 steps done
+**Branch:** `step-12-security` (branched from `step-11-evaluation`; none merged to `main`)
 
 ---
 
@@ -15,30 +15,31 @@ Single source of truth for project state. Updated at the end of every working se
 three votes, which has not yet passed against the real model (step-11 §5.4):
 `$env:EKA_EVAL_ANSWERS="1"; dotnet test tests/EKA.Evaluation --filter Category=Evaluation`.
 
-**Step 12 — Security and enterprise controls.**
-Exit criterion: *security tests prove unauthorized content cannot be retrieved.*
+**Step 13 — Angular 21 client.**
+Exit criterion: *a user uploads a document, waits for indexing, asks questions, and inspects
+citations.*
 
 **Decisions needed first:**
 
 | Decision | Options |
 |---|---|
-| Identity provider | Entra ID (the claims the code already reads: `tid`, `groups`) vs Keycloak (local, free, container) vs ASP.NET Core Identity (no SSO) |
-| Who may change document access | Uploader as owner + a tenant admin role vs anyone who can read (today) |
-| Rate limiting and cost control | Per-user token bucket on ask/search (ASP.NET Core rate limiter) vs per-tenant monthly token budget vs both |
-| Development scheme | Deleted with the real provider (ADR-0014 says deleted, not disabled) |
+| OIDC library | `angular-auth-oidc-client` (certified, PKCE, silent renew) vs `oidc-client-ts` wrapped by hand vs a backend-for-frontend (tokens never in the browser) |
+| Streaming answers | None (whole answer, as today) vs server-sent events (widens `IChatCompletionService`; citations sent at the end, step-10 §7) |
+| UI kit | Angular Material vs a headless/CSS-only approach; accessibility (WCAG 2.2 AA) either way |
+| Where it lives | `src/EKA.Web` in this repo vs a separate repo; how CI builds it |
 
 Then:
 
-1. JWT bearer with issuer/audience/scope validation; delete `DevelopmentHeader`; tests mint tokens.
-2. Document-level authorization tests over the real token path (cross-tenant, cross-group,
-   forged/expired tokens) — the evaluation's hard rules as security tests.
-3. Groups overage handling; EF global query filters as defence in depth (open decision).
-4. Rate limits and per-tenant token budgets; upload scanning limits; log hygiene (no prompts,
-   no questions, no document text at Information).
-5. A threat model document (OWASP Top 10 for LLM Applications).
+1. Workspace (standalone components, signals), typed client generated from the API's OpenAPI
+   document, sign-in against Keycloak client `eka-cli` (authorization code + PKCE; redirect
+   `http://localhost:4200`), CORS on the API for that origin only.
+2. Documents: upload with progress, ingestion status polling, access editing (owner/admin).
+3. Conversations: ask, answer with citations rendered as **text** (never HTML: threat model
+   LLM05), citation panel (document, section, pages, score); 429 and refusal states.
+4. Accessibility and error states; component tests; an end-to-end run against the real stack.
 
-Reference: [adr/0014](adr/0014-development-authentication.md), [adr/0027](adr/0027-document-acl-canonical-keys.md),
-[steps/step-11](steps/step-11-evaluation.md).
+Reference: [adr/0031](adr/0031-oidc-jwt-and-document-ownership.md), [security/threat-model](security/threat-model.md),
+[steps/step-12](steps/step-12-security.md).
 
 ---
 
@@ -395,6 +396,44 @@ persisted messages", so they belong there. Document upload of actual bytes is St
    prompt v2 grades it PARTIAL; single votes still flip ~1 in 5, so calibration takes 3 votes.
 5. Cache inputs differed between tiers (history questions); a recording run compared before saving.
 
+#### Step 12 — Security and enterprise controls ✅
+
+- **Exit criterion met twice:** 34 `SecurityTests` over the real token path (every content route
+  × other tenant / same tenant no group / other tenant same group / admin not in group, with a
+  canary and a positive control; 6 kinds of invalid token reach no handler; scope and tenant
+  required; retired headers ignored), and the real stack with **Keycloak 26.6.4 tokens**, real
+  embeddings and gpt-4o-mini (step-12 §6).
+- Decided with the owner: generic OIDC + Keycloak locally ([ADR-0031](adr/0031-oidc-jwt-and-document-ownership.md),
+  supersedes ADR-0014 — the development scheme is **deleted**); owner + tenant admin manage,
+  admins do not read; per-user rate limits **and** per-tenant monthly budgets; hardened parsing
+  behind a scanning port ([ADR-0032](adr/0032-rate-limits-budgets-and-upload-hardening.md)).
+- JWT validation: signature (JWKS), issuer, audience, lifetime (1 min skew), scope `eka.access`,
+  `tid`; claim names as issued; startup refuses no authority/audience or HTTP metadata outside
+  Development. Tests sign real tokens through the production path.
+- Documents: `OwnerSubject` (backfilled from `CreatedBy`); read / see / manage separated;
+  403 for readers who may not manage, 404 for callers who cannot see.
+- Rate limits (ask/search/upload, per tenant+user, 429 + Retry-After); budgets (2M tokens/month
+  default, per-tenant overrides, 0 suspends; checked before provider calls; chat, question and
+  ingestion embeddings recorded in an atomic `MERGE … HOLDLOCK` ledger); `GET /api/usage` (admins).
+- Uploads: measured DOCX decompression cap (zip bombs), PDF page cap, extracted-text cap;
+  `IMalwareScanner` before any parser (no-op adapter that warns).
+- Log hygiene: proved no question, answer or document text in logs down to Debug;
+  `Microsoft.Extensions.AI` pinned to Information.
+- Threat model: [docs/security/threat-model.md](security/threat-model.md) (OWASP LLM Top 10).
+- Migrations `DocumentOwnership`, `TenantTokenUsage`. Keycloak in compose with a checked-in realm.
+- **687 tests** (+6 domain, +13 application, +36 integration of which 34 are `SecurityTests` cases).
+
+**Found and fixed, all recorded in [step-12](steps/step-12-security.md):**
+
+1. **A tenant suspension that bound to nothing:** the configuration binder silently drops
+   `Dictionary<Guid, long>` entries — `Budgets:Tenants:{guid}=0` had no effect. String keys,
+   validated as GUIDs at startup.
+2. A test named "anonymous is rejected" had asserted 200 since Step 4 (development scheme); its
+   intended assertion is now true.
+3. The security suite's canary was not unique across tenants; "no handler ran" ignored seeding
+   calls. Both fixed in the tests.
+4. The ledger was designed off the request `DbContext` before parallel indexing could break it.
+
 ---
 
 ## Step checklist
@@ -412,8 +451,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | 9 | Vector retrieval with ACL filtering | ✅ Complete — 578 tests |
 | 10 | RAG answer generation with citations | ✅ Complete — 611 tests |
 | 11 | Evaluation | ✅ Complete — 632 tests |
-| 12 | Security and enterprise controls | ⬜ Next |
-| 13 | Angular 21 client | ⬜ Not started |
+| 12 | Security and enterprise controls | ✅ Complete — 687 tests |
+| 13 | Angular 21 client | ⬜ Next |
 | 14 | Deployment and release readiness | ⬜ Not started |
 
 ---
@@ -426,14 +465,15 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | Later | Hybrid search | Dense-only; the evaluation shows no exact-term misses on the current set ([ADR-0028](adr/0028-retrieval-contract.md)). Add identifier-heavy questions before deciding |
 | When budget allows | Three judge votes in the full answer run | Single votes flip toward leniency ~1 in 5 on borderline answers; re-baseline when switching ([ADR-0030](adr/0030-two-tier-evaluation-with-baselines.md)) |
 | Before relying on tier 2 | Harder evaluation questions | Every tier-2 metric is 1.0: no headroom. Add multi-step, numeric and conflicting-source questions |
-| Step 12 | Who may change a document's access | Today anyone who can read it ([ADR-0027](adr/0027-document-acl-canonical-keys.md)); roles (owner / admin) with the identity provider |
-| Step 12 | Grants table vs JSON column | JSON column suffices until an admin report needs "everything group X can read" |
+| With an admin report | Grants table vs JSON column | JSON column suffices until an admin report needs "everything group X can read" |
 | With a real corpus | Chunk size and algorithm | 500/75 section-aware is unchallenged by the synthetic set (sections are short). Compare semantic or parent/child on long real documents; the evaluation can now measure it ([ADR-0024](adr/0024-section-aware-chunking-deterministic-point-ids.md)) |
 | Later | Follow-up retrieval | One pronoun follow-up ranks 2nd (q29). Add more follow-ups to the set before paying for LLM query rewriting ([ADR-0029](adr/0029-grounded-answers-refusal-and-citations.md)) |
 | Step 13 | Streaming and citations | Marker extraction needs the whole answer; stream text, then send citations at the end |
-| Step 12 | Identity provider | Entra ID vs Keycloak vs ASP.NET Core Identity |
-| Step 12 | EF global query filters | As *defence in depth* on top of explicit tenant parameters, not instead of them — see ADR-0009 |
-| Step 12 | `AIProvider` rows vs `Ai` configuration | The seeded row records what a prompt was written for; configuration chooses what answers. Reconcile or drop the table |
+| Step 14 | Production identity configuration | Entra ID app registration (audience, `eka.access` scope, `groups` + `roles` claims) or managed Keycloak; disable the password grant ([ADR-0031](adr/0031-oidc-jwt-and-document-ownership.md)) |
+| Deferred from Step 12 | EF global query filters | *Defence in depth* on top of explicit tenant parameters (ADR-0009). Not done: every path is already tenant-scoped and covered by `SecurityTests`; revisit if a raw `DbContext` query is ever added |
+| Step 14 | Malware scanner adapter | ClamAV container vs Defender for Storage vs a vendor API, behind `IMalwareScanner` ([ADR-0032](adr/0032-rate-limits-budgets-and-upload-hardening.md)) |
+| Step 14 | Shared rate-limit store | Redis once more than one API instance runs (limits are per process today) |
+| Later | `AIProvider` rows vs `Ai` configuration | The seeded row records what a prompt was written for; configuration chooses what answers. Reconcile or drop the table |
 | Step 14 | Hangfire dashboard | Not wired: mapping it resolves job storage at API startup. Belongs with operations/monitoring, behind authorization |
 | Step 14 | Second storage adapter | Azure Blob vs S3, once the deployment target is chosen ([ADR-0021](adr/0021-file-storage-port-local-disk.md)) |
 
@@ -443,18 +483,19 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 
 | Risk | Why it matters | Mitigation |
 |---|---|---|
-| ACL leak through retrieval | The worst failure mode — one user reading another's documents | Tenant + access filter inside the vector query and inside SQL, independently written; SQL re-check decides (Step 9, proved end to end incl. stale payloads); security tests in Step 12 |
+| ACL leak through retrieval | The worst failure mode — one user reading another's documents | Tenant + access filter inside the vector query and inside SQL, independently written; SQL re-check decides (Step 9); `SecurityTests` over the real token path with canaries (Step 12) |
+| Identity misconfiguration | A wrong authority, HTTP metadata, or a self-editable tenant attribute undoes everything | Startup refuses missing authority/audience and HTTP metadata outside Development; `tid` admin-only in the realm; [threat model](security/threat-model.md) |
 | Embedding dimension change | Forces a full re-index | Model recorded per chunk; the adapter refuses vectors of another size (Step 8); searches filter on `embedding_model`, so a same-size model swap cannot mix spaces (Step 9) |
 | Cross-tenant vector query | Qdrant isolation is a payload filter, not a boundary | A search filter without a tenant is refused before I/O; every hit re-checked in SQL; proved with identical documents in two tenants (Step 9) |
 | Access-payload drift | The Qdrant copy of access keys can lag SQL | Fails closed (SQL re-check); "dropped by the SQL re-check" logged per search; reconciliation job if it stays above zero |
 | Prompt injection via document content | Uploaded documents are untrusted input | Document text only in the user turn, inside `<source>` delimiters it cannot forge (tested); v2 instruction treats sources as data; a planted instruction was ignored by gpt-4o-mini on the real stack (Step 10). Model compliance is not guaranteed — add injection cases to Step 11's set |
 | Cited but unsupported answers | A correct citation can sit on an over-reaching claim | Measured as groundedness by a calibrated judge (Step 11); temperature 0 removed the observed case; single-vote judge can miss a borderline one |
 | Evaluation spend | Billed evaluation and smoke runs draw on a personal key's weekly limit | Tier 2 is opt-in (`EKA_EVAL_ANSWERS=1`); output capped; this step exhausted the limit twice — fund a separate evaluation key before CI runs tier 2 |
-| Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer, client errors never retried (Step 5, tested); token budgets, caching, rate limits in Step 12 |
+| Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer (Step 5); output cap (Step 11); per-user rate limits and per-tenant monthly budgets checked before provider calls (Step 12). Budgets are soft (concurrent overshoot) |
 | Third-party data path | OpenRouter sits between us and the model vendor | Learning data only until the decision above is made; switching to OpenAI direct or Azure is configuration (ADR-0015) |
 | Scope creep into agents/GraphRAG | Burns the 12 weeks before the basics work | The out-of-scope list in the learning path |
 | Supply chain via NuGet | A malicious package executes at build time | Source mapping (ADR-0006); NuGet audit as errors + transitive pinning (Step 7, caught NU1903); `packages.lock.json` at Step 14 |
-| Untrusted uploads | Parsers are attack surface; files may lie about their type | Type from bytes, extension must agree, size limits in two layers; parsing runs in the worker, not the API (Step 7) |
+| Untrusted uploads | Parsers are attack surface; files may lie about their type | Type from bytes (Step 7); measured zip-bomb, page and text caps; scanning port before parsing (Step 12). No real scanner configured yet |
 
 ---
 
@@ -474,14 +515,22 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 
 ## Known limitations of the current code
 
-- **Authentication is a development stand-in.** `DevelopmentHeader` trusts request headers
-  and authenticates nobody. Three gates keep it in Development (default-false flag,
-  `IsDevelopment()` check, startup throw elsewhere), and the third is asserted by reading
-  the code rather than by a test. Deleted, not disabled, in Step 12
-  ([ADR-0014](adr/0014-development-authentication.md)).
-- **`appsettings.Development.json` ships with the scheme enabled**, so a developer who
-  renames their environment hits the startup throw. That is the designed behaviour, but it
-  is a surprise worth knowing about in advance.
+- **Local development needs Keycloak running** (`docker compose … up -d keycloak`, about a minute
+  on first start) and a token per request (`deploy/keycloak/get-token.ps1`). The local realm
+  enables the password grant for scripts; a deployed realm must not ([ADR-0031](adr/0031-oidc-jwt-and-document-ownership.md)).
+- **The local realm's test users share a committed password** (`local-dev-only`). Acceptable
+  only because Keycloak is bound to loopback and holds no real identities.
+- **Tokens stay valid until they expire** (5 minutes in the local realm) after a user is
+  disabled; no introspection or revocation check.
+- **Groups overage** (Entra ID, more than 200 groups) gives the caller no groups: fails closed.
+- **Administrators see the titles of documents they cannot read** (to manage them).
+- **Budgets are soft and per month; rate limits are per process.** Concurrent requests can
+  overshoot a budget by what they cost together; several API instances each allow the full rate.
+- **No malware scanner is configured.** The port runs before every parse; the no-op adapter
+  logs a warning once per worker start.
+- **Budgets are configuration, not data:** changing one is a configuration change and restart.
+- **The startup guard against HTTP metadata outside Development is asserted by code review**,
+  not by a test (it would have to boot the app in another environment).
 - **Exhausted retries leave a document in an intermediate status** (`Extracting`, `Chunking`
   or `Embedding`). After five transient failures the job sits in Hangfire's Failed list; the
   sweep only re-enqueues `Pending`. Needs a terminal handler that marks the document Failed,
@@ -555,9 +604,6 @@ persisted messages", so they belong there. Document upload of actual bytes is St
   is visibly working and visibly incomplete. Step 7 did not need one — ingestion is driven by
   the job, not by events — so the first subscriber waits for a real consumer (notifications,
   Step 12/13) rather than being invented.
-- **Audit columns carry no real attribution yet.** The development scheme supplies a
-  subject id, so writes are stamped `"dev-user"` rather than `"system"` — still not a real
-  identity until Step 12.
 - Architecture tests use `Assembly.GetReferencedAssemblies()`, which the compiler trims to
   references compiled code actually uses.
 - **`AIProvider` rows are not read yet.** The active provider comes from the `Ai`

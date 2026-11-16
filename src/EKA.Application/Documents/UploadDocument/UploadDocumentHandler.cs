@@ -122,7 +122,9 @@ public sealed class UploadDocumentHandler(
             new FileMetadata(fileName, FileTypeDetector.ContentTypeOf(fileType), sizeBytes, contentHash),
             storageKey,
             timeProvider.GetUtcNow(),
-            command.Authority is null ? null : new AuthorityScore(command.Authority.Value));
+            command.Authority is null ? null : new AuthorityScore(command.Authority.Value),
+            // The uploader owns it: they, or an administrator, may manage it (Step 12).
+            ownerSubject: command.Caller.SubjectId);
 
         documents.Add(document);
 
@@ -168,7 +170,7 @@ public sealed class UploadDocumentHandler(
     /// duplicate would break the idempotency index. Recorded in step-09.
     /// </remarks>
     private static Result<UploadDocumentOutcome> AlreadyRegistered(Document existing, UploadDocumentCommand command) =>
-        existing.IsAccessibleTo(command.Caller)
+        existing.IsVisibleTo(command.Caller)
             ? new UploadDocumentOutcome(existing.ToResponse(), AlreadyRegistered: true, Queued: false)
             : DocumentErrors.DuplicateNotAccessible;
 

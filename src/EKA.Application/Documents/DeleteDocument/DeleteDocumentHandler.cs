@@ -48,9 +48,9 @@ public sealed partial class DeleteDocumentHandler(
             .GetByIdAsync(command.Caller.TenantId, command.DocumentId, cancellationToken)
             .ConfigureAwait(false);
 
-        if (document is null || !document.IsAccessibleTo(command.Caller))
+        if (DocumentAuthorization.CannotManage(document, command.Caller, command.DocumentId, out var error))
         {
-            return DocumentErrors.NotFound(command.DocumentId);
+            return error;
         }
 
         documents.Remove(document);

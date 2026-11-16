@@ -72,6 +72,12 @@
 
   <ItemGroup Label="ASP.NET Core">
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="$(MicrosoftRuntimeVersion)" />
+    <!--
+      Step 12: validates OIDC access tokens from any standards-compliant issuer (Keycloak
+      locally, Entra ID in production) - signature from the issuer's published keys, issuer,
+      audience, lifetime. Rate limiting is in the shared framework and needs no package.
+    -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="$(MicrosoftRuntimeVersion)" />
   </ItemGroup>
 
   <ItemGroup Label="Validation">

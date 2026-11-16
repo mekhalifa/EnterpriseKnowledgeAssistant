@@ -172,6 +172,81 @@ public sealed class DocumentUseCaseAccessTests
         document.Title.Value.ShouldBe("Employee handbook");
     }
 
+    // ── Management (Step 12) ────────────────────────────────────────────────────────
+
+    private SetDocumentAccessHandler SetAccess() =>
+        new(_documents, new FakeUnitOfWork(), new FakeVectorStore(), new FixedTimeProvider(FixedTimeProvider.DefaultNow));
+
+    [Fact]
+    public async Task A_reader_who_is_not_the_owner_gets_403_because_they_already_know_it_exists()
+    {
+        var document = TestData.Document(owner: "olivia");
+        _documents.With(document);
+
+        var result = await SetAccess().HandleAsync(new SetDocumentAccessCommand(_bob, document.Id, ["user:bob"]));
+
+        result.Error.Code.ShouldBe("document.not_manageable");
+        result.Error.Type.ShouldBe(ErrorType.Forbidden);
+        document.AccessKeys.ShouldBe(["tenant"]);
+    }
+
+    [Fact]
+    public async Task Someone_who_can_neither_read_nor_manage_it_still_gets_404()
+    {
+        var document = TestData.Restricted("group:hr");
+        _documents.With(document);
+
+        (await SetAccess().HandleAsync(new SetDocumentAccessCommand(_bob, document.Id, ["tenant"])))
+            .Error.Code.ShouldBe("document.not_found");
+    }
+
+    [Fact]
+    public async Task A_tenant_administrator_can_rescue_a_document_that_locks_everyone_out()
+    {
+        var document = TestData.Document(owner: "departed-employee", access: DocumentAccess.Of([AccessPrincipal.User("departed-employee")]));
+        _documents.With(document);
+        var admin = TestData.Caller(subject: "root", isAdministrator: true);
+
+        (await new GetDocumentHandler(_documents).HandleAsync(new GetDocumentQuery(admin, document.Id))).IsSuccess.ShouldBeTrue();
+        var result = await SetAccess().HandleAsync(new SetDocumentAccessCommand(admin, document.Id, ["tenant"]));
+
+        result.Value.Access.ShouldBe(["tenant"]);
+    }
+
+    [Fact]
+    public async Task An_administrator_of_another_tenant_cannot_see_the_document_at_all()
+    {
+        var document = TestData.Document();
+        _documents.With(document);
+        var foreignAdmin = TestData.Caller(TestData.OtherTenant, "root", isAdministrator: true);
+
+        (await SetAccess().HandleAsync(new SetDocumentAccessCommand(foreignAdmin, document.Id, ["tenant"])))
+            .Error.Code.ShouldBe("document.not_found");
+    }
+
+    [Fact]
+    public async Task Uploading_records_the_uploader_as_owner()
+    {
+        var handler = new UploadDocumentHandler(
+            _documents, new FakeUnitOfWork(), new FakeFileStorage(), new FakeIngestionQueue(),
+            Options.Create(new IngestionOptions()), new FixedTimeProvider(FixedTimeProvider.DefaultNow));
+
+        await handler.HandleAsync(new UploadDocumentCommand(TestData.Caller(subject: "olivia"), "a.txt", new MemoryStream("Text."u8.ToArray()), null, null));
+
+        _documents.All.Single().OwnerSubject.ShouldBe("olivia");
+    }
+
+    [Fact]
+    public async Task The_list_shows_an_owner_their_document_even_after_they_restricted_it_away_from_themselves()
+    {
+        _documents.With(TestData.Document(owner: "olivia", access: DocumentAccess.Of([AccessPrincipal.Group("hr")])));
+
+        var page = (await new ListDocumentsHandler(_documents).HandleAsync(
+            new ListDocumentsQuery(TestData.Caller(subject: "olivia"), null, 1, 20))).Value;
+
+        page.TotalCount.ShouldBe(1);
+    }
+
     [Fact]
     public async Task Uploading_bytes_already_held_in_a_restricted_document_is_a_conflict_that_names_nothing()
     {

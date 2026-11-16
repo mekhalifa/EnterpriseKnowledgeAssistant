@@ -47,6 +47,10 @@ internal static class ErrorResults
             // whether retrying is sensible: a provider timeout usually is, our bug is not.
             ErrorType.Provider => (StatusCodes.Status502BadGateway, "Upstream provider failed"),
 
+            // Step 12: allowed, but not now (a spent monthly budget). Same status as the
+            // per-minute rate limiter, distinguished by the error code.
+            ErrorType.LimitExceeded => (StatusCodes.Status429TooManyRequests, "Usage limit reached"),
+
             // Not an expected branch — it means an ErrorType was added without deciding
             // what it returns. Throwing here surfaces that during the first request in
             // development rather than shipping an arbitrary status code.

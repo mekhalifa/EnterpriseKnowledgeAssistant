@@ -101,12 +101,12 @@ Details: [docs/concepts/clean-architecture.md](docs/concepts/clean-architecture.
 dotnet build                        # build the solution (warnings are errors)
 dotnet test                         # all tests; integration needs Docker running
 
-# Call the API locally. Until Step 12 wires an identity provider, the tenant comes from a
-# header read by a Development-only authentication scheme (ADR-0014). Omit the header and
-# a configured default tenant is used.
-curl http://localhost:5000/api/documents -H "X-EKA-Tenant: 11111111-1111-1111-1111-111111111111"
-# Since Step 9: X-EKA-Subject and X-EKA-Groups (comma-separated) decide document access (ADR-0027).
-curl -X POST http://localhost:5000/api/search -H "Content-Type: application/json" -H "X-EKA-Groups: hr" -d '{"query":"How many days of leave?"}'
+# Call the API locally (Step 12, ADR-0031): a bearer token from the local Keycloak realm.
+# Users alice | carol (hr) | dana (finance) | root (eka.admin) | bruno (tenant B), password local-dev-only.
+docker compose -f deploy/docker-compose.yml up -d keycloak     # needs KEYCLOAK_ADMIN_PASSWORD in deploy/.env
+$token = ./deploy/keycloak/get-token.ps1 -User carol
+curl http://localhost:5000/api/documents -H "Authorization: Bearer $token"
+curl -X POST http://localhost:5000/api/search -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d '{"query":"How many days of leave?"}'
 dotnet tool restore                 # restore dotnet-ef, pinned in .config/dotnet-tools.json
 
 # AI provider key (OpenRouter by default, ADR-0015). Never in appsettings.json.
@@ -128,7 +128,7 @@ dotnet user-secrets --project src/EKA.Ingestion.Worker set "Ai:ApiKey" "<key>"
 dotnet run --project src/EKA.Ingestion.Worker
 # Local connection strings: use 127.0.0.1, not localhost (the SQL container binds IPv4 only).
 
-# Local SQL Server and Qdrant (Step 8). Requires deploy/.env (copy deploy/.env.example first).
+# Local SQL Server, Qdrant (Step 8) and Keycloak (Step 12). Requires deploy/.env (copy deploy/.env.example first).
 # Qdrant dashboard: http://127.0.0.1:6333/dashboard. The app uses gRPC on 6334.
 docker compose -f deploy/docker-compose.yml up -d
 docker compose -f deploy/docker-compose.yml down       # add -v to drop the data volume
@@ -152,6 +152,7 @@ Versions live in `Directory.Packages.props` under `$(MicrosoftRuntimeVersion)`.
 | [docs/steps/](docs/steps/) | Full teaching write-up for each completed step |
 | [docs/adr/](docs/adr/) | Architecture Decision Records — what we chose and why |
 | [docs/concepts/](docs/concepts/) | Reference material: Clean Architecture, DDD, SOLID, patterns |
+| [docs/security/threat-model.md](docs/security/threat-model.md) | Assets, boundaries, OWASP LLM Top 10 mapping, accepted risks |
 | [.claude/skills/](.claude/skills/) | Project skills — the repeatable workflows below |
 
 ## Project skills

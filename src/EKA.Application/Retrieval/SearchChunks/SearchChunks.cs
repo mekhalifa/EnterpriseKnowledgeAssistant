@@ -1,4 +1,5 @@
 using EKA.Application.Common;
+using EKA.Application.Usage;
 using EKA.Contracts.Retrieval;
 using EKA.Domain.Access;
 using FluentValidation;
@@ -19,11 +20,18 @@ public sealed record SearchChunksQuery(AccessScope Caller, string Query, int? To
 /// Thin on purpose. Everything that decides <i>what</i> is returned lives in the retriever,
 /// which Step 10 calls directly, so the endpoint and answer generation cannot drift apart.
 /// </remarks>
-public sealed class SearchChunksHandler(ChunkRetriever retriever)
+public sealed class SearchChunksHandler(ChunkRetriever retriever, TokenBudget budget)
 {
     public async Task<Result<SearchResponse>> HandleAsync(SearchChunksQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+
+        // Step 12: a spent monthly budget stops the embedding call before it is made.
+        var available = await budget.EnsureAvailableAsync(query.Caller.TenantId, cancellationToken).ConfigureAwait(false);
+        if (available.IsFailure)
+        {
+            return available.Error;
+        }
 
         var result = await retriever.RetrieveAsync(query.Caller, query.Query, query.TopK, cancellationToken).ConfigureAwait(false);
         if (result.IsFailure)

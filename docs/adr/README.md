@@ -39,7 +39,7 @@ useful as the current belief.
 | [0011](0011-result-pattern.md) | Result for expected failures, exceptions for broken rules | Accepted | 2026-11-12 |
 | [0012](0012-vertical-slices-no-mediator.md) | Vertical slices with direct handler injection, no mediator | Accepted | 2026-11-12 |
 | [0013](0013-validation-placement.md) | Shape validation at the edge, stateful rules in the handler | Accepted | 2026-11-12 |
-| [0014](0014-development-authentication.md) | A development authentication scheme until an identity provider exists | Accepted | 2026-11-12 |
+| [0014](0014-development-authentication.md) | A development authentication scheme until an identity provider exists | Superseded by 0031 | 2026-11-12 |
 | [0015](0015-openai-compatible-provider.md) | One OpenAI-compatible adapter, with OpenRouter as the first endpoint | Accepted | 2026-11-15 |
 | [0016](0016-application-owns-ai-ports.md) | The application owns its AI ports; `IChatClient` stays in the adapter | Accepted | 2026-11-15 |
 | [0017](0017-just-in-time-user-provisioning.md) | Just-in-time user provisioning, unique per tenant | Accepted | 2026-11-15 |
@@ -56,6 +56,8 @@ useful as the current belief.
 | [0028](0028-retrieval-contract.md) | The retrieval contract: dense-only, configured top-K and floor, over-fetch, empty as success | Accepted | 2026-11-16 |
 | [0029](0029-grounded-answers-refusal-and-citations.md) | Grounded answers: two-layer refusal, numbered citation markers, the raw question for retrieval | Accepted | 2026-11-16 |
 | [0030](0030-two-tier-evaluation-with-baselines.md) | Two-tier evaluation: recorded embeddings gate every build, a calibrated LLM judge gates billed runs | Accepted | 2026-11-16 |
+| [0031](0031-oidc-jwt-and-document-ownership.md) | OIDC access tokens from any issuer, Keycloak locally; document owners and tenant administrators | Accepted | 2026-11-16 |
+| [0032](0032-rate-limits-budgets-and-upload-hardening.md) | Per-user rate limits, per-tenant monthly token budgets, hardened uploads | Accepted | 2026-11-16 |
 
 ## Template
 

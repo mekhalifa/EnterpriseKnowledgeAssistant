@@ -52,6 +52,7 @@ public sealed partial class ExtractDocumentTextHandler(
     IDocumentRepository documents,
     IUnitOfWork unitOfWork,
     IFileStorage storage,
+    IMalwareScanner scanner,
     TextExtractionPipeline pipeline,
     ExtractedTextStore extractedText,
     TimeProvider timeProvider,
@@ -82,6 +83,22 @@ public sealed partial class ExtractDocumentTextHandler(
         try
         {
             var fileType = FileTypeDetector.FromContentType(document.File.ContentType);
+
+            // Scanned before any parser runs (Step 12). Parsers are the attack surface, so an
+            // infected file must never reach one. A scanner outage throws, and the job retries.
+            ScanVerdict verdict;
+            await using (var scanned = await storage.OpenReadAsync(document.StorageKey, cancellationToken).ConfigureAwait(false))
+            {
+                verdict = await scanner.ScanAsync(scanned, document.File.FileName, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (verdict.IsInfected)
+            {
+                // The file is removed, not kept: storing known malware helps no one, and any later
+                // reader of the storage folder would be at risk.
+                await storage.DeleteAsync(document.StorageKey, cancellationToken).ConfigureAwait(false);
+                return await FailAsync(document, $"The file was rejected by the malware scanner ({verdict.Threat}).", cancellationToken).ConfigureAwait(false);
+            }
 
             await using var content = await storage
                 .OpenReadAsync(document.StorageKey, cancellationToken)

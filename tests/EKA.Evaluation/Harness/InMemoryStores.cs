@@ -235,6 +235,22 @@ internal sealed class InMemoryUnitOfWork : IUnitOfWork
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) => Task.FromResult(0);
 }
 
+internal sealed class InMemoryTokenUsageLedger : Application.Abstractions.Usage.ITokenUsageLedger
+{
+    public Task AddAsync(TenantId tenantId, Application.Abstractions.Usage.UsagePeriod period, Application.Abstractions.Usage.TokenUsage usage, CancellationToken cancellationToken = default) =>
+        Task.CompletedTask;
+
+    public Task<Application.Abstractions.Usage.TokenUsage> GetAsync(TenantId tenantId, Application.Abstractions.Usage.UsagePeriod period, CancellationToken cancellationToken = default) =>
+        Task.FromResult(Application.Abstractions.Usage.TokenUsage.None);
+}
+
+/// <summary>The evaluation corpus is ours and clean.</summary>
+internal sealed class CleanScanner : IMalwareScanner
+{
+    public Task<ScanVerdict> ScanAsync(Stream content, string fileName, CancellationToken cancellationToken = default) =>
+        Task.FromResult(ScanVerdict.Clean);
+}
+
 internal sealed class NoIngestionQueue : IIngestionQueue
 {
     public Task<bool> EnqueueIngestionAsync(TenantId tenantId, Guid documentId, CancellationToken cancellationToken = default) =>

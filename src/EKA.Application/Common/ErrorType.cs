@@ -50,4 +50,18 @@ public enum ErrorType
     /// a provider timeout is worth retrying, a bug in our code is not.
     /// </remarks>
     Provider = 5,
+
+    /// <summary>A usage limit has been reached. HTTP 429.</summary>
+    /// <remarks>
+    /// Step 12: a tenant's monthly token budget is spent. 429 rather than 403, because the
+    /// caller is allowed to do this, just not now: the same request succeeds next month or
+    /// after the budget is raised. Per-minute rate limits answer 429 too, from the middleware.
+    /// </remarks>
+    LimitExceeded = 6,
+}
+
+/// <summary>Constructors for <see cref="ErrorType.LimitExceeded"/> errors.</summary>
+public static class LimitErrors
+{
+    public static Error Exceeded(string code, string message) => new(code, message, ErrorType.LimitExceeded);
 }

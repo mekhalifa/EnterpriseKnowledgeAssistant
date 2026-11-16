@@ -213,6 +213,10 @@ namespace EKA.Infrastructure.Persistence.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<string>("OwnerSubject")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
@@ -406,6 +410,34 @@ namespace EKA.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("UX_AIProviders_Name");
 
                     b.ToTable("AIProviders", (string)null);
+                });
+
+            modelBuilder.Entity("EKA.Infrastructure.Usage.TenantTokenUsageRow", b =>
+                {
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Period")
+                        .HasMaxLength(7)
+                        .IsUnicode(false)
+                        .HasColumnType("char(7)")
+                        .IsFixedLength();
+
+                    b.Property<long>("ChatInputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("ChatOutputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("EmbeddingTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.HasKey("TenantId", "Period");
+
+                    b.ToTable("TenantTokenUsage", (string)null);
                 });
 
             modelBuilder.Entity("EKA.Domain.Conversations.Message", b =>

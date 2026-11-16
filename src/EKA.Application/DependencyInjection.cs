@@ -19,6 +19,7 @@ using EKA.Application.Documents.ResetDocument;
 using EKA.Application.Documents.SetDocumentAccess;
 using EKA.Application.Retrieval;
 using EKA.Application.Retrieval.SearchChunks;
+using EKA.Application.Usage;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -79,6 +80,10 @@ public static class DependencyInjection
         services.AddSingleton<IValidateOptions<IngestionOptions>, IngestionOptionsValidator>();
         services.AddSingleton<IValidateOptions<IndexingOptions>, IndexingOptionsValidator>();
         services.AddSingleton<IValidateOptions<RetrievalOptions>, RetrievalOptionsValidator>();
+        services.AddSingleton<IValidateOptions<TokenBudgetOptions>, TokenBudgetOptionsValidator>();
+
+        // Both hosts spend tokens: the API on questions, the worker on ingestion (Step 12).
+        services.AddScoped<TokenBudget>();
 
         // Pure and stateless, and needed by both hosts since Step 8: the API budgets prompts
         // with it, the worker sizes chunks with it. One counter for both means a chunk the
@@ -114,6 +119,8 @@ public static class DependencyInjection
         // answer generation will use it too, not only the search endpoint.
         services.AddScoped<ChunkRetriever>();
         services.AddScoped<SearchChunksHandler>();
+
+        services.AddScoped<GetUsageHandler>();
 
         services.AddScoped<StartConversationHandler>();
         services.AddScoped<AskQuestionHandler>();

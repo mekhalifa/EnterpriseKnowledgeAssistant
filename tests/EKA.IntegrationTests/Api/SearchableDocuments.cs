@@ -26,7 +26,8 @@ internal static class SearchableDocuments
         Guid tenant,
         string text,
         string title = "Leave policy",
-        DocumentAccess? access = null)
+        DocumentAccess? access = null,
+        string? owner = "owner")
     {
         var tenantId = new TenantId(tenant);
         var now = DateTimeOffset.UtcNow;
@@ -34,7 +35,7 @@ internal static class SearchableDocuments
 
         var document = new Document(
             Guid.CreateVersion7(), tenantId, new DocumentTitle(title),
-            new FileMetadata("policy.md", "text/markdown", text.Length, hash), $"seeded/{hash}", now, access: access);
+            new FileMetadata("policy.md", "text/markdown", text.Length, hash), $"seeded/{hash}", now, access: access, ownerSubject: owner);
         document.BeginExtraction(now);
         document.CompleteExtraction(now);
         document.AddChunks([new DocumentChunk(Guid.CreateVersion7(), document.Id, ChunkIndex.First, text, new TokenCount(20), now, sectionPath: "Leave")], now);

@@ -105,6 +105,10 @@ internal sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         // Typed view over AccessKeys, computed on read. Not a column.
         builder.Ignore(document => document.Access);
 
+        // Step 12: who may manage the document. Same width as CreatedBy, whose value it was
+        // backfilled from (migration DocumentOwnership).
+        builder.Property(document => document.OwnerSubject).HasMaxLength(256);
+
         // ── Chunks: the aggregate's children. Cascade delete because a chunk has no
         //    meaning without its document.
         builder.HasMany(document => document.Chunks)

@@ -75,8 +75,9 @@ public interface IDocumentRepository
     /// One page of the documents a caller may read, newest first, optionally narrowed to a
     /// single ingestion status.
     /// </summary>
-    /// <param name="caller">Tenant <b>and</b> access list, both applied inside the query, so
-    /// the total count never counts a document the caller cannot see (Step 9).</param>
+    /// <param name="caller">Tenant <b>and</b> visibility (access list, ownership, administration,
+    /// as <c>Document.IsVisibleTo</c>) applied inside the query, so the total count never counts
+    /// a document the caller cannot see (Steps 9 and 12).</param>
     /// <param name="status">Filter to one status, or null for all of them.</param>
     /// <param name="skip">Rows to skip. Computed by the caller from page and page size.</param>
     /// <param name="take">Maximum rows to return.</param>

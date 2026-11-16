@@ -37,5 +37,11 @@ public interface ICurrentUser
     /// <remarks>Empty by default: a service identity belongs to no group.</remarks>
     IReadOnlyList<string> Groups => [];
 
+    /// <summary>
+    /// The caller holds the tenant administrator role (Step 12): they may manage any document in
+    /// their tenant. Reading content still follows each document's access list.
+    /// </summary>
+    bool IsAdministrator => false;
+
     bool IsAuthenticated => SubjectId is not null;
 }

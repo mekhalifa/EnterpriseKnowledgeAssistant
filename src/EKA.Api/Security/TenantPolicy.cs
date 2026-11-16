@@ -70,7 +70,7 @@ internal static class TenantPolicy
                 $"The authenticated caller has no subject claim, but the '{Name}' policy "
                 + "requires an authenticated user.");
 
-        return AccessScope.For(currentUser.RequireTenantId(), subject, currentUser.Groups);
+        return AccessScope.For(currentUser.RequireTenantId(), subject, currentUser.Groups, currentUser.IsAdministrator);
     }
 
     /// <summary>
@@ -94,6 +94,7 @@ internal static class TenantPolicy
             subject,
             currentUser.Email,
             currentUser.DisplayName,
-            currentUser.Groups);
+            currentUser.Groups,
+            currentUser.IsAdministrator);
     }
 }

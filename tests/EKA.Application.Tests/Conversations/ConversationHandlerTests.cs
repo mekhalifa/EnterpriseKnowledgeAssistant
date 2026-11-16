@@ -61,11 +61,14 @@ public sealed class ConversationHandlerTests
 
     private StartConversationHandler Start() => new(Provisioner(), _conversations, _unitOfWork, _time);
 
+    private readonly FakeTokenUsageLedger _ledger = new();
+    private long _monthlyBudget = 1_000_000;
+
     private ChunkRetriever Retriever() =>
-        new(_embeddings, _vectors, _chunks, Options.Create(new RetrievalOptions()), NullLogger<ChunkRetriever>.Instance);
+        new(_embeddings, _vectors, _chunks, Budgets.For(_ledger, _monthlyBudget), Options.Create(new RetrievalOptions()), NullLogger<ChunkRetriever>.Instance);
 
     private AskQuestionHandler Ask(int maxPromptTokens = 6000, int maxContextTokens = 3000) => new(
-        Provisioner(), _conversations, _templates, Retriever(), _chat,
+        Provisioner(), _conversations, _templates, Retriever(), Budgets.For(_ledger, _monthlyBudget), _chat,
         new PromptBuilder(new EstimatingTokenCounter()), _unitOfWork,
         Options.Create(new ChatOptions { MaxPromptTokens = maxPromptTokens, MaxContextTokens = maxContextTokens }), _time);
 
@@ -362,6 +365,54 @@ public sealed class ConversationHandlerTests
         result.Value.SourcesProvided.ShouldBe(1);
         result.Value.Answer.Citations.ShouldHaveSingleItem();
         _chat.Prompts.Single()[^1].Content.ShouldNotContain("xxxx");
+    }
+
+    // ── Token budget (Step 12) ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task An_answered_question_records_what_it_cost_against_the_tenant()
+    {
+        await AskAsync("How many days of leave?");
+
+        var spent = _ledger.For(TestData.Tenant);
+        spent.ChatInputTokens.ShouldBe(50);   // the provider's count (FakeChatCompletionService)
+        spent.ChatOutputTokens.ShouldBe(7);
+        spent.EmbeddingTokens.ShouldBe(1);    // the question's embedding (FixedQueryEmbedding reports 1)
+    }
+
+    [Fact]
+    public async Task A_spent_budget_stops_the_question_before_any_provider_is_called()
+    {
+        _monthlyBudget = 100;
+        await _ledger.AddAsync(TestData.Tenant, Abstractions.Usage.UsagePeriod.Of(FixedTimeProvider.DefaultNow), new(80, 20, 0));
+        var conversationId = await StartedConversation();
+        var savesBefore = _unitOfWork.SaveCount;
+
+        var result = await Ask().HandleAsync(new AskQuestionCommand(Alice, conversationId, "leave?"));
+
+        result.Error.Code.ShouldBe("usage.budget_exhausted");
+        result.Error.Type.ShouldBe(EKA.Application.Common.ErrorType.LimitExceeded);
+        _embeddings.Calls.ShouldBe(0);
+        _chat.Prompts.ShouldBeEmpty();
+        _unitOfWork.SaveCount.ShouldBe(savesBefore);
+    }
+
+    [Fact]
+    public async Task Budgets_are_per_tenant()
+    {
+        _monthlyBudget = 100;
+        await _ledger.AddAsync(TestData.OtherTenant, Abstractions.Usage.UsagePeriod.Of(FixedTimeProvider.DefaultNow), new(100, 0, 0));
+
+        // AskAsync asserts success; the model being called proves the budget let it through.
+        (await AskAsync("leave?")).Answer.Model.ShouldBe("fake-model", "another tenant's spending must not stop this one");
+    }
+
+    [Fact]
+    public async Task A_ledger_outage_does_not_fail_an_answer_that_was_already_paid_for()
+    {
+        _ledger.FailWrites = true;
+
+        (await AskAsync("leave?")).Answer.Content.ShouldNotBeNullOrWhiteSpace();
     }
 
     [Fact]

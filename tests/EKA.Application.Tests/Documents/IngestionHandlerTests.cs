@@ -127,9 +127,10 @@ public sealed class ExtractDocumentTextHandlerTests
     private readonly FakeDocumentRepository _documents = new();
     private readonly FakeUnitOfWork _unitOfWork = new();
     private readonly FakeFileStorage _storage = new();
+    private readonly FakeMalwareScanner _scanner = new();
 
     private ExtractDocumentTextHandler Handler(params ITextExtractor[] extractors) => new(
-        _documents, _unitOfWork, _storage,
+        _documents, _unitOfWork, _storage, _scanner,
         new TextExtractionPipeline(extractors.Length > 0 ? extractors : [FakeExtractor.Returning(DocumentFileType.PlainText, "Leave: 25 days.")]),
         new ExtractedTextStore(_storage),
         FixedTimeProvider.Default,
@@ -139,7 +140,8 @@ public sealed class ExtractDocumentTextHandlerTests
     {
         var document = new Document(
             Guid.CreateVersion7(), TestData.Tenant, new DocumentTitle("Leave"),
-            new FileMetadata("leave.txt", "text/plain", 15, TestData.Hash), "t/leave.txt", FixedTimeProvider.DefaultNow);
+            new FileMetadata("leave.txt", "text/plain", 15, TestData.Hash), "t/leave.txt", FixedTimeProvider.DefaultNow,
+            ownerSubject: "alice");
 
         if (driveTo is IngestionStatus.Extracting)
         {
@@ -252,6 +254,46 @@ public sealed class ExtractDocumentTextHandlerTests
 
         outcome.ShouldBe(ExtractionOutcome.NothingOwed);
         document.Status.ShouldBe(IngestionStatus.Pending);
+    }
+
+    [Fact]
+    public async Task An_infected_file_fails_the_document_is_deleted_and_is_never_parsed()
+    {
+        var document = StoredTextDocument();
+        _scanner.Verdict = ScanVerdict.Infected("EICAR-Test-File");
+        var extractor = FakeExtractor.Returning(DocumentFileType.PlainText, "never read");
+
+        var outcome = await Handler(extractor).HandleAsync(For(document));
+
+        outcome.ShouldBe(ExtractionOutcome.Unreadable);
+        document.FailureReason.ShouldNotBeNull().ShouldContain("EICAR-Test-File");
+        extractor.Calls.ShouldBe(0);
+        _storage.Files.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_scanner_outage_is_retried_never_read_as_clean()
+    {
+        var document = StoredTextDocument();
+        _scanner.Fail = true;
+        var extractor = FakeExtractor.Returning(DocumentFileType.PlainText, "never read");
+
+        await Should.ThrowAsync<IOException>(() => Handler(extractor).HandleAsync(For(document)));
+
+        extractor.Calls.ShouldBe(0);
+        document.Status.ShouldBe(IngestionStatus.Extracting); // left for the job's retry
+    }
+
+    [Fact]
+    public async Task Text_beyond_the_character_limit_fails_the_document_before_it_is_chunked_or_embedded()
+    {
+        var pipeline = new TextExtractionPipeline(
+            [FakeExtractor.Returning(DocumentFileType.PlainText, new string('x', 2_000))],
+            Microsoft.Extensions.Options.Options.Create(new IngestionOptions { MaxExtractedCharacters = 1_000 }));
+
+        var thrown = await Should.ThrowAsync<UnreadableDocumentException>(() => pipeline.ExtractAsync(DocumentFileType.PlainText, Stream.Null));
+
+        thrown.Message.ShouldContain("limit");
     }
 
     [Fact]

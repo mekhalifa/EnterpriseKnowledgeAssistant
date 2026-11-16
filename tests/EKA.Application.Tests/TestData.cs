@@ -30,8 +30,8 @@ internal static class TestData
     /// A caller in <paramref name="tenantId"/> (default <see cref="Tenant"/>), as the API builds
     /// one from a token. Every tenant-wide document is readable to it.
     /// </summary>
-    public static AccessScope Caller(TenantId? tenantId = null, string subject = "alice", params string[] groups) =>
-        AccessScope.For(tenantId ?? Tenant, subject, groups);
+    public static AccessScope Caller(TenantId? tenantId = null, string subject = "alice", bool isAdministrator = false, params string[] groups) =>
+        AccessScope.For(tenantId ?? Tenant, subject, groups, isAdministrator);
 
     public static FileMetadata File(string? contentHash = null) =>
         new("policy.pdf", "application/pdf", 1024, contentHash ?? Hash);
@@ -42,10 +42,13 @@ internal static class TestData
         string title = "Employee handbook",
         string? contentHash = null,
         DateTimeOffset? createdAt = null,
-        DocumentAccess? access = null)
+        DocumentAccess? access = null,
+        string? owner = "alice")
     {
         var documentId = id ?? Guid.CreateVersion7();
 
+        // Owned by alice, the default Caller(), as every uploaded document is owned by its
+        // uploader (Step 12). Tests about non-owners say so explicitly.
         return new Document(
             documentId,
             tenantId ?? Tenant,
@@ -53,7 +56,8 @@ internal static class TestData
             File(contentHash),
             $"{(tenantId ?? Tenant).Value:N}/{documentId:N}.pdf",
             createdAt ?? Fakes.FixedTimeProvider.DefaultNow,
-            access: access);
+            access: access,
+            ownerSubject: owner);
     }
 
     /// <summary>

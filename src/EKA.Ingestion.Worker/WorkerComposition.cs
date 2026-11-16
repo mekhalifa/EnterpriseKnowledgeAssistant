@@ -3,6 +3,7 @@ using EKA.Application;
 using EKA.Application.Abstractions;
 using EKA.Application.Documents.Indexing;
 using EKA.Application.Documents.Ingestion;
+using EKA.Application.Usage;
 using EKA.Infrastructure;
 
 namespace EKA.Ingestion.Worker;
@@ -40,6 +41,11 @@ public static class WorkerComposition
 
         services.AddOptions<IndexingOptions>()
             .Bind(configuration.GetSection(IndexingOptions.SectionName))
+            .ValidateOnStart();
+
+        // Step 12: ingestion records the embedding tokens it spends against the tenant's month.
+        services.AddOptions<TokenBudgetOptions>()
+            .Bind(configuration.GetSection(TokenBudgetOptions.SectionName))
             .ValidateOnStart();
 
         // The embedding model, since Step 8. Same adapter, resilience and configuration shape

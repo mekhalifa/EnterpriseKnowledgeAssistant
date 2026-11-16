@@ -32,12 +32,10 @@ public sealed class GetDocumentHandler(IDocumentRepository documents)
             .GetByIdAsync(query.Caller.TenantId, query.DocumentId, cancellationToken)
             .ConfigureAwait(false);
 
-        // A document the caller may not read is "not found", exactly like one in another
-        // tenant: a 403 would confirm that the id exists (see DocumentErrors.NotFound).
-        // Target-typed conditional: both branches convert to Result<DocumentResponse>
-        // through the implicit operators on Result<T>.
-        return document is null || !document.IsAccessibleTo(query.Caller)
-            ? DocumentErrors.NotFound(query.DocumentId)
+        // A document the caller may neither read nor manage is "not found", exactly like one in
+        // another tenant: a 403 would confirm that the id exists (see DocumentErrors.NotFound).
+        return DocumentAuthorization.CannotSee(document, query.Caller, query.DocumentId, out var error)
+            ? error
             : document.ToResponse();
     }
 }

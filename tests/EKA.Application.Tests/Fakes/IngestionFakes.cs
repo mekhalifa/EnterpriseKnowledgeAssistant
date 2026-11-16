@@ -55,6 +55,17 @@ internal sealed class FakeIngestionQueue : IIngestionQueue
     }
 }
 
+/// <summary>Returns a set verdict, or throws as an unreachable scanner would.</summary>
+internal sealed class FakeMalwareScanner : IMalwareScanner
+{
+    public ScanVerdict Verdict { get; set; } = ScanVerdict.Clean;
+
+    public bool Fail { get; set; }
+
+    public Task<ScanVerdict> ScanAsync(Stream content, string fileName, CancellationToken cancellationToken = default) =>
+        Fail ? throw new IOException("scanner unreachable") : Task.FromResult(Verdict);
+}
+
 /// <summary>Claims one type and returns a fixed result, or throws a given exception.</summary>
 internal sealed class FakeExtractor(DocumentFileType handles, Func<ExtractedDocument> result) : ITextExtractor
 {

@@ -220,23 +220,9 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
     {
         var response = await _factory.CreateAnonymousClient().GetAsync("/api/documents");
 
-        // The development scheme supplies a default identity when headers are absent, so
-        // this is 200 rather than 401 — proving the pipeline runs end to end. The
-        // authorization policy itself is proven by the next test, and Step 12 replaces the
-        // scheme with one that rejects.
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-    }
-
-    [Fact]
-    public async Task A_malformed_tenant_header_is_rejected_rather_than_defaulted()
-    {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-EKA-Tenant", "not-a-guid");
-
-        var response = await client.GetAsync("/api/documents");
-
-        // Falling back to the default tenant here would make a typo in a test look like a
-        // passing cross-tenant check.
+        // Until Step 12 this asserted 200: the development scheme invented an identity when
+        // none was sent, and the comment here said Step 12 would fix it. The test's name was
+        // true only from today. The token-path cases live in SecurityTests.
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 

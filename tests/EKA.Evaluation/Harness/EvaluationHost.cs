@@ -121,6 +121,11 @@ internal sealed class EvaluationHost : IAsyncDisposable
         services.AddSingleton<IConversationRepository, InMemoryConversationRepository>();
         services.AddSingleton<IUnitOfWork, InMemoryUnitOfWork>();
         services.AddSingleton<IIngestionQueue, NoIngestionQueue>();
+        services.AddSingleton<IMalwareScanner, CleanScanner>();
+
+        // An unlimited, in-memory ledger: the evaluation measures quality, not budgets.
+        services.AddSingleton<Application.Abstractions.Usage.ITokenUsageLedger, InMemoryTokenUsageLedger>();
+        services.AddOptions<Application.Usage.TokenBudgetOptions>().Configure(budget => budget.MonthlyTokens = long.MaxValue);
         services.AddSingleton<IEmbeddingService>(embeddings);
         if (chat is not null)
         {
@@ -217,6 +222,7 @@ internal sealed class EvaluationHost : IAsyncDisposable
         Embeddings,
         _services.GetRequiredService<IVectorStore>(),
         _services.GetRequiredService<IChunkReader>(),
+        _services.GetRequiredService<Application.Usage.TokenBudget>(),
         Options.Create(options),
         NullLogger<ChunkRetriever>.Instance);
 

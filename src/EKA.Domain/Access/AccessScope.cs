@@ -22,14 +22,26 @@ public sealed class AccessScope
 {
     private readonly HashSet<string> _keys;
 
-    private AccessScope(TenantId tenantId, IReadOnlyList<AccessPrincipal> principals)
+    private AccessScope(TenantId tenantId, string subjectId, IReadOnlyList<AccessPrincipal> principals, bool isAdministrator)
     {
         TenantId = tenantId;
+        SubjectId = subjectId;
         Principals = principals;
+        IsAdministrator = isAdministrator;
         _keys = new HashSet<string>(principals.Select(principal => principal.Key), StringComparer.Ordinal);
     }
 
     public TenantId TenantId { get; }
+
+    /// <summary>The caller's subject, as the identity provider issues it. Compared with a document's owner.</summary>
+    public string SubjectId { get; }
+
+    /// <summary>
+    /// The caller holds the tenant administrator role (Step 12). It lets them <i>manage</i> any
+    /// document in their tenant (see <c>Document.CanBeManagedBy</c>). It does <b>not</b> let
+    /// them read content: search and answers still go by the access list alone.
+    /// </summary>
+    public bool IsAdministrator { get; }
 
     /// <summary>Tenant, the user, then the groups, distinct.</summary>
     public IReadOnlyList<AccessPrincipal> Principals { get; }
@@ -41,8 +53,9 @@ public sealed class AccessScope
     /// <param name="subjectId">The caller's subject, from the token.</param>
     /// <param name="groupIds">The caller's groups, from the token. Blank entries are ignored,
     /// because identity providers emit them more often than one would hope.</param>
+    /// <param name="isAdministrator">The caller holds the tenant administrator role.</param>
     /// <exception cref="DomainException">An empty tenant, or an unusable subject or group id.</exception>
-    public static AccessScope For(TenantId tenantId, string subjectId, IEnumerable<string>? groupIds = null)
+    public static AccessScope For(TenantId tenantId, string subjectId, IEnumerable<string>? groupIds = null, bool isAdministrator = false)
     {
         if (tenantId.IsEmpty)
         {
@@ -56,7 +69,7 @@ public sealed class AccessScope
             .Distinct(StringComparer.Ordinal)
             .Select(AccessPrincipal.Group));
 
-        return new AccessScope(tenantId, principals);
+        return new AccessScope(tenantId, subjectId, principals, isAdministrator);
     }
 
     public bool Holds(AccessPrincipal principal)

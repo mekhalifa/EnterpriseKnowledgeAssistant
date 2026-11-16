@@ -56,6 +56,7 @@ internal static class ConversationEndpoints
 
         conversations.MapPost("/{conversationId:guid}/messages", AskAsync)
             .WithName("AskQuestion")
+            .RequireRateLimiting(RateLimitingOptions.AskPolicy)
             .WithSummary("Asks a question in a conversation and returns the persisted exchange.")
             .WithValidation<AskQuestionRequest>()
             .Produces<AskQuestionResponse>()

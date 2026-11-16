@@ -6,6 +6,7 @@ using EKA.Application.Abstractions.Ingestion;
 using EKA.Application.Common;
 using EKA.Application.Documents.Indexing;
 using EKA.Application.Documents.Ingestion;
+using EKA.Application.Usage;
 using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
 using Microsoft.Extensions.Logging;
@@ -69,6 +70,7 @@ public sealed partial class IndexDocumentHandler(
     IChunkingStrategy chunker,
     IEmbeddingService embeddings,
     IVectorStore vectors,
+    TokenBudget budget,
     IOptions<IndexingOptions> options,
     TimeProvider timeProvider,
     ILogger<IndexDocumentHandler> logger)
@@ -227,6 +229,10 @@ public sealed partial class IndexDocumentHandler(
             {
                 return new BatchResult(batch, result.Error, null);
             }
+
+            // Ingestion is recorded but never refused (Step 12, ADR-0032): stopping it would
+            // leave documents half indexed. The tenant's next question meets the budget check.
+            await budget.RecordEmbeddingAsync(document.TenantId, result.Value, inputs, cancellationToken).ConfigureAwait(false);
 
             var points = batch
                 .Select((chunk, i) => new ChunkVector(

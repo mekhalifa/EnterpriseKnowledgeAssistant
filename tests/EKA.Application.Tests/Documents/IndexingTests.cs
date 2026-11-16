@@ -188,6 +188,7 @@ public sealed class IndexDocumentHandlerTests
     private readonly FakeFileStorage _storage = new();
     private readonly FakeEmbeddingService _embeddings = new();
     private readonly FakeVectorStore _vectors = new();
+    private readonly FakeTokenUsageLedger _ledger = new();
 
     private IndexDocumentHandler Handler() => new(
         _documents,
@@ -196,6 +197,7 @@ public sealed class IndexDocumentHandlerTests
         new SectionAwareChunker(new EstimatingTokenCounter(), Options.Create(new IndexingOptions { ChunkTargetTokens = 50, ChunkOverlapTokens = 10 })),
         _embeddings,
         _vectors,
+        Budgets.For(_ledger),
         Options.Create(new IndexingOptions { EmbeddingBatchSize = 2, MaxConcurrentBatches = 2 }),
         FixedTimeProvider.Default,
         NullLogger<IndexDocumentHandler>.Instance);

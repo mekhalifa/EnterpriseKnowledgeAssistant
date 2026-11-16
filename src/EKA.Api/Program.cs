@@ -7,8 +7,8 @@ using EKA.Application.Abstractions;
 using EKA.Application.Conversations;
 using EKA.Application.Documents.Ingestion;
 using EKA.Application.Retrieval;
+using EKA.Application.Usage;
 using EKA.Infrastructure;
-using Microsoft.AspNetCore.Authentication;
 
 // ─────────────────────────────────────────────────────────────────────────────────────
 // Composition root.
@@ -58,49 +58,13 @@ builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
-builder.Services.AddOptions<DevelopmentAuthenticationOptions>()
-    .BindConfiguration(DevelopmentAuthenticationOptions.SectionName)
-    .ValidateDataAnnotations()
-    .ValidateOnStart();
+// Step 12: JWT bearer tokens from an OIDC issuer (Keycloak locally, Entra ID in production),
+// replacing the development header scheme, which is deleted, not disabled (ADR-0014, ADR-0031).
+// Every endpoint, handler and repository reads only the principal, so none of them changed.
+builder.AddEkaAuthentication();
 
-var developmentAuthentication = builder.Configuration
-    .GetSection(DevelopmentAuthenticationOptions.SectionName)
-    .Get<DevelopmentAuthenticationOptions>() ?? new DevelopmentAuthenticationOptions();
-
-// Gate 3 of 3 (the other two are the default-false flag and the IsDevelopment check
-// below): refuse to start rather than run a header-trusting authentication scheme outside
-// development. A config file copied to staging now stops the deployment instead of
-// silently accepting any tenant anyone cares to type.
-if (developmentAuthentication.Enabled && !builder.Environment.IsDevelopment())
-{
-    throw new InvalidOperationException(
-        $"'{DevelopmentAuthenticationOptions.SectionName}:Enabled' is true in the "
-        + $"'{builder.Environment.EnvironmentName}' environment. That scheme trusts request "
-        + "headers and must never run outside Development.");
-}
-
-var useDevelopmentAuthentication =
-    developmentAuthentication.Enabled && builder.Environment.IsDevelopment();
-
-// Exactly one scheme is registered, and which one is a deployment-time fact rather than a
-// per-request decision. Step 12 adds a third branch here — JWT bearer — and no endpoint,
-// handler or repository changes, because none of them reads anything but the principal.
-if (useDevelopmentAuthentication)
-{
-    builder.Services
-        .AddAuthentication(DevelopmentAuthenticationOptions.SchemeName)
-        .AddScheme<AuthenticationSchemeOptions, DevelopmentAuthenticationHandler>(
-            DevelopmentAuthenticationOptions.SchemeName,
-            configureOptions: null);
-}
-else
-{
-    builder.Services
-        .AddAuthentication(NoIdentityProviderHandler.SchemeName)
-        .AddScheme<AuthenticationSchemeOptions, NoIdentityProviderHandler>(
-            NoIdentityProviderHandler.SchemeName,
-            configureOptions: null);
-}
+var requiredScope = builder.Configuration[$"{JwtAuthenticationOptions.SectionName}:{nameof(JwtAuthenticationOptions.RequiredScope)}"]
+    ?? new JwtAuthenticationOptions().RequiredScope;
 
 builder.Services.AddAuthorization(options =>
     options.AddPolicy(
@@ -110,7 +74,12 @@ builder.Services.AddAuthorization(options =>
             // Not decoration: every repository method takes a tenant, so a token without
             // one has nothing to filter by. Rejecting here is the alternative to inventing
             // a tenant somewhere further down.
-            .RequireClaim(TenantPolicy.TenantClaim)));
+            .RequireClaim(TenantPolicy.TenantClaim)
+            // Granted access to THIS API, not merely signed in somewhere in the same directory.
+            .RequireAssertion(context => JwtAuthentication.HasScope(context.User, requiredScope))));
+
+// Per-user token buckets on the endpoints that cost money (Step 12, ADR-0032).
+builder.AddEkaRateLimiting();
 
 // ── Application and infrastructure ──────────────────────────────────────────────────
 
@@ -125,6 +94,12 @@ builder.Services.AddOptions<ChatOptions>()
 // Upload limits and the stalled-document threshold, shared with the worker.
 builder.Services.AddOptions<IngestionOptions>()
     .BindConfiguration(IngestionOptions.SectionName)
+    .ValidateOnStart();
+
+// Monthly token budgets per tenant (Step 12). The worker binds the same section, because
+// ingestion records what it spends.
+builder.Services.AddOptions<TokenBudgetOptions>()
+    .BindConfiguration(TokenBudgetOptions.SectionName)
     .ValidateOnStart();
 
 // Top-K, score floor and over-fetch for retrieval (Step 9). Defaults in RetrievalOptions;
@@ -173,10 +148,15 @@ app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// After authorization, so the partition key is a verified identity and anonymous requests are
+// refused (401) without spending anyone's allowance.
+app.UseRateLimiter();
+
 app.MapHealthEndpoints();
 app.MapDocumentEndpoints();
 app.MapConversationEndpoints();
 app.MapRetrievalEndpoints();
+app.MapUsageEndpoints();
 
 await app.RunAsync();
 

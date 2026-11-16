@@ -295,13 +295,9 @@ public sealed class RetrievalEndToEndTests : IAsyncLifetime
     [Fact]
     public async Task Search_requires_an_authenticated_caller()
     {
-        // The development scheme fills in a default identity when headers are absent, so the
-        // unauthenticated case is a malformed one: authentication fails, and the route group's
-        // policy must turn that into 401 before the handler runs.
-        var client = _api.CreateAnonymousClient();
-        client.DefaultRequestHeaders.Add("X-EKA-Tenant", "not-a-guid");
-
-        var response = await client.PostAsJsonAsync("/api/search", new SearchRequest("leave"));
+        // No token: the route group's policy must answer 401 before the handler (and its
+        // billed embedding call) runs.
+        var response = await _api.CreateAnonymousClient().PostAsJsonAsync("/api/search", new SearchRequest("leave"));
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         _embeddings.Calls.ShouldBe(0);

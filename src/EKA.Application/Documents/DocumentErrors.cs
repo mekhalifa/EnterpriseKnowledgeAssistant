@@ -40,6 +40,19 @@ internal static class DocumentErrors
         "document.duplicate_not_accessible",
         "A document with identical contents already exists in this tenant, and you do not have access to it.");
 
+    /// <summary>
+    /// The caller can see the document but may not change it: only its owner or a tenant
+    /// administrator may (Step 12).
+    /// </summary>
+    /// <remarks>
+    /// 403, not 404, because the caller can already read the document, so its existence is no
+    /// secret to them. A 404 here would be a lie that sends a legitimate user looking for a
+    /// bug. A document the caller cannot see at all is still 404.
+    /// </remarks>
+    public static Error NotManageable(Guid documentId) => Error.Forbidden(
+        "document.not_manageable",
+        $"Only the owner of document {documentId} or an administrator can change it.");
+
     /// <summary>The access list in a request is not one the domain accepts.</summary>
     public static Error InvalidAccess(string reason) => Error.Validation(
         "document.invalid_access",

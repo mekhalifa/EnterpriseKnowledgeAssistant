@@ -3,6 +3,7 @@ using EKA.Application.Abstractions.Ingestion;
 using EKA.Application.Abstractions.Retrieval;
 using EKA.Application.Common;
 using EKA.Application.Documents.Indexing;
+using EKA.Application.Usage;
 using EKA.Domain.Access;
 using EKA.Domain.Retrieval;
 using Microsoft.Extensions.Logging;
@@ -48,6 +49,7 @@ public sealed partial class ChunkRetriever(
     IEmbeddingService embeddings,
     IVectorStore vectors,
     IChunkReader chunks,
+    TokenBudget budget,
     IOptions<RetrievalOptions> options,
     ILogger<ChunkRetriever> logger)
 {
@@ -71,14 +73,17 @@ public sealed partial class ChunkRetriever(
 
         var wanted = EffectiveTopK(topK);
 
-        var embedded = await embeddings
-            .EmbedAsync([EmbeddingInput.ForQuery(question)], cancellationToken)
-            .ConfigureAwait(false);
+        string[] input = [EmbeddingInput.ForQuery(question)];
+        var embedded = await embeddings.EmbedAsync(input, cancellationToken).ConfigureAwait(false);
 
         if (embedded.IsFailure)
         {
             return embedded.Error;
         }
+
+        // Paid for, so counted (Step 12). The budget CHECK belongs to the use cases that call
+        // this: whether to spend is their decision, recording what was spent is not.
+        await budget.RecordEmbeddingAsync(caller.TenantId, embedded.Value, input, cancellationToken).ConfigureAwait(false);
 
         var hits = await vectors
             .SearchAsync(

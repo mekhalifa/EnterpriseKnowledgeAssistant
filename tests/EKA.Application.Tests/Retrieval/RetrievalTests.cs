@@ -77,8 +77,10 @@ public sealed class ChunkRetrieverTests
     private readonly FixedQueryEmbedding _embeddings = new(Query);
     private readonly RetrievalOptions _options = new() { DefaultTopK = 5, MaxTopK = 20, MinimumScore = 0.6, CandidateMultiplier = 2 };
 
+    private readonly FakeTokenUsageLedger _ledger = new();
+
     private ChunkRetriever Retriever() =>
-        new(_embeddings, _vectors, _chunks, Options.Create(_options), NullLogger<ChunkRetriever>.Instance);
+        new(_embeddings, _vectors, _chunks, Budgets.For(_ledger), Options.Create(_options), NullLogger<ChunkRetriever>.Instance);
 
     /// <summary>Indexes a completed document as the worker would: its vectors carry its access keys.</summary>
     private Document Index(Document document, params float[][] vectors)
@@ -263,7 +265,7 @@ public sealed class ChunkRetrieverTests
     {
         Index(TestData.Completed(), Close);
 
-        var result = await new SearchChunksHandler(Retriever()).HandleAsync(new SearchChunksQuery(TestData.Caller(), "leave?", 500));
+        var result = await new SearchChunksHandler(Retriever(), Budgets.For(_ledger)).HandleAsync(new SearchChunksQuery(TestData.Caller(), "leave?", 500));
 
         result.Value.TopK.ShouldBe(_options.MaxTopK);
         var hit = result.Value.Hits.ShouldHaveSingleItem();

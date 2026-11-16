@@ -20,8 +20,9 @@ public sealed record CallerIdentity(
     string SubjectId,
     string? Email,
     string? DisplayName,
-    IReadOnlyList<string>? Groups = null)
+    IReadOnlyList<string>? Groups = null,
+    bool IsAdministrator = false)
 {
     /// <summary>What this caller may read: the same scope <c>POST /api/search</c> uses.</summary>
-    public AccessScope AccessScope => AccessScope.For(TenantId, SubjectId, Groups);
+    public AccessScope AccessScope => AccessScope.For(TenantId, SubjectId, Groups, IsAdministrator);
 }

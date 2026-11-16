@@ -53,7 +53,8 @@ public sealed class Document : EntityAudit<Guid>
         string storageKey,
         DateTimeOffset createdAt,
         AuthorityScore? authority = null,
-        DocumentAccess? access = null)
+        DocumentAccess? access = null,
+        string? ownerSubject = null)
         : base(id, createdAt)
     {
         ArgumentNullException.ThrowIfNull(title);
@@ -79,7 +80,21 @@ public sealed class Document : EntityAudit<Guid>
         Authority = authority ?? AuthorityScore.Standard;
         Status = IngestionStatus.Pending;
         _accessKeys.AddRange((access ?? DocumentAccess.TenantWide).Keys);
+
+        if (ownerSubject is not null && string.IsNullOrWhiteSpace(ownerSubject))
+        {
+            throw new DomainException("A document's owner must be a subject id, or none.");
+        }
+
+        OwnerSubject = ownerSubject;
     }
+
+    /// <summary>
+    /// The subject of whoever uploaded the document (Step 12): they may manage it. Null for a
+    /// document with no known uploader (created before Step 12 by a system identity), which
+    /// only an administrator can manage.
+    /// </summary>
+    public string? OwnerSubject { get; private set; }
 
     public TenantId TenantId { get; private set; }
 
@@ -139,6 +154,31 @@ public sealed class Document : EntityAudit<Guid>
 
         return scope.TenantId == TenantId && Access.Grants(scope);
     }
+
+    /// <summary>
+    /// Who may change this document (its access, title, ingestion state, existence): its owner,
+    /// or an administrator of its tenant (Step 12).
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="IsAccessibleTo"/> on purpose. Reading and administering are
+    /// different privileges. A reader in an allowed group may not delete the document, and an
+    /// administrator who may fix its access list still gets none of its content through search or
+    /// answers unless that list grants it. Least privilege, in both directions.
+    /// </remarks>
+    public bool CanBeManagedBy(AccessScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+
+        return scope.TenantId == TenantId
+            && (scope.IsAdministrator || (OwnerSubject is not null && string.Equals(OwnerSubject, scope.SubjectId, StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// Whether the document's metadata (title, status, access list) may be shown to the caller:
+    /// they may read it, or manage it. An owner who restricted a document away from themselves,
+    /// or an administrator, can still find it to fix it. Content follows <see cref="IsAccessibleTo"/> only.
+    /// </summary>
+    public bool IsVisibleTo(AccessScope scope) => IsAccessibleTo(scope) || CanBeManagedBy(scope);
 
     /// <summary>Replaces who may read this document. Legal in any ingestion state.</summary>
     /// <remarks>

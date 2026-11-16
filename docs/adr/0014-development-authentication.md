@@ -1,6 +1,6 @@
 # ADR-0014: A development authentication scheme until an identity provider exists
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0031](0031-oidc-jwt-and-document-ownership.md) (Step 12: the scheme was deleted)
 - **Date:** 2026-11-12
 - **Deciders:** project owner
 

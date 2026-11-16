@@ -27,7 +27,8 @@ Each step document records what we built, why, the best option, and the alternat
 | 9 | [step-09-retrieval-acl.md](steps/step-09-retrieval-acl.md) | ✅ Complete |
 | 10 | [step-10-grounded-answers.md](steps/step-10-grounded-answers.md) | ✅ Complete |
 | 11 | [step-11-evaluation.md](steps/step-11-evaluation.md) — reports in [evaluation/](evaluation/) | ✅ Complete |
-| 12–14 | *created as we reach them* | — |
+| 12 | [step-12-security.md](steps/step-12-security.md) — threat model in [security/](security/threat-model.md) | ✅ Complete |
+| 13–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -48,7 +49,7 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0011](adr/0011-result-pattern.md) | Result for expected failures, exceptions for broken rules | Accepted |
 | [0012](adr/0012-vertical-slices-no-mediator.md) | Vertical slices, direct handler injection, no mediator | Accepted |
 | [0013](adr/0013-validation-placement.md) | Shape validation at the edge, stateful rules in the handler | Accepted |
-| [0014](adr/0014-development-authentication.md) | A development authentication scheme until Step 12 | Accepted |
+| [0014](adr/0014-development-authentication.md) | A development authentication scheme until Step 12 | Superseded by 0031 |
 | [0015](adr/0015-openai-compatible-provider.md) | One OpenAI-compatible adapter; OpenRouter first | Accepted |
 | [0016](adr/0016-application-owns-ai-ports.md) | The application owns its AI ports | Accepted |
 | [0017](adr/0017-just-in-time-user-provisioning.md) | Just-in-time user provisioning, unique per tenant | Accepted |
@@ -65,6 +66,8 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0028](adr/0028-retrieval-contract.md) | Retrieval contract: dense-only, configured K and floor, empty is success | Accepted |
 | [0029](adr/0029-grounded-answers-refusal-and-citations.md) | Grounded answers: two-layer refusal, numbered citations | Accepted |
 | [0030](adr/0030-two-tier-evaluation-with-baselines.md) | Two-tier evaluation with baselines and a calibrated judge | Accepted |
+| [0031](adr/0031-oidc-jwt-and-document-ownership.md) | OIDC tokens (Keycloak local, Entra ID prod); owners and admins | Accepted |
+| [0032](adr/0032-rate-limits-budgets-and-upload-hardening.md) | Rate limits, tenant token budgets, hardened uploads | Accepted |
 
 ## Project skills
 

@@ -3,7 +3,9 @@ using EKA.Application.Abstractions.AI;
 using EKA.Application.Common;
 using EKA.Domain.Common;
 using EKA.Infrastructure;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,7 +39,8 @@ internal sealed class EkaApiFactory(
     string connectionString,
     IReadOnlyDictionary<string, string?>? settings = null,
     Uri? vectorStore = null,
-    IEmbeddingService? embeddings = null) : WebApplicationFactory<Program>
+    IEmbeddingService? embeddings = null,
+    Action<IServiceCollection>? configureServices = null) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -56,7 +59,19 @@ internal sealed class EkaApiFactory(
             $"ConnectionStrings:{DependencyInjection.ConnectionStringName}",
             connectionString);
 
-        builder.UseSetting("Authentication:Development:Enabled", "true");
+        // The test issuer (see TestTokens). Its metadata is supplied in-process below, so the
+        // HTTPS-metadata rule stays on, as in production.
+        builder.UseSetting("Authentication:Jwt:Authority", TestTokens.Issuer);
+        builder.UseSetting("Authentication:Jwt:Audience", TestTokens.Audience);
+
+        // Generous limits by default: functional tests burst on purpose (eight concurrent
+        // uploads prove idempotency). The rate-limit tests pass tight limits in `settings`,
+        // which are applied after these and win.
+        foreach (var policy in new[] { "Ask", "Search", "Upload" })
+        {
+            builder.UseSetting($"RateLimiting:{policy}:TokenLimit", "1000");
+            builder.UseSetting($"RateLimiting:{policy}:TokensPerMinute", "1000");
+        }
 
         // AddAi validates on start and refuses to boot without a key. These tests never call
         // a model, so a placeholder satisfies the validator and this suite runs on a machine
@@ -86,6 +101,15 @@ internal sealed class EkaApiFactory(
         // adapter is proven separately by EKA.AI.Tests' smoke tests.
         builder.ConfigureTestServices(services =>
         {
+            // The issuer's published metadata, supplied directly: its name and its signing key.
+            // Everything else about token validation is the production configuration.
+            services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                var metadata = new OpenIdConnectConfiguration { Issuer = TestTokens.Issuer };
+                metadata.SigningKeys.Add(TestTokens.SigningKey);
+                options.Configuration = metadata;
+            });
+
             services.Replace(ServiceDescriptor.Singleton<IChatCompletionService>(Chat));
 
             // Always replaced, never left real. Since Step 10 every question is embedded, and the
@@ -93,6 +117,9 @@ internal sealed class EkaApiFactory(
             // fail on the placeholder key in CI (step-10 section 5.1). Retrieval tests pass the
             // stand-in their worker uses, so both sides share one vector space.
             services.Replace(ServiceDescriptor.Singleton(Embeddings));
+
+            // A test's own additions, last, e.g. a log capture (LogHygieneTests).
+            configureServices?.Invoke(services);
         });
     }
 
@@ -100,23 +127,25 @@ internal sealed class EkaApiFactory(
     public IEmbeddingService Embeddings { get; } = embeddings ?? new DeterministicEmbeddingService();
 
     /// <summary>
-    /// A client that presents the given tenant on every request.
+    /// A client that presents a signed access token for this tenant, subject and groups.
     /// </summary>
     /// <remarks>
-    /// This is the whole reason the development scheme reads headers rather than using a
-    /// single fixed tenant: two clients, two tenants, one server — which is what the
-    /// isolation tests need and a hard-coded tenant could not express.
+    /// Two clients, two tenants, one server: what the isolation tests need. Since Step 12 the
+    /// identity travels as a real bearer token, validated exactly as in production.
     /// </remarks>
-    public HttpClient CreateClientFor(Guid tenantId, string subjectId = "test-user", params string[] groups)
+    public HttpClient CreateClientFor(Guid tenantId, string subjectId = "test-user", params string[] groups) =>
+        CreateClientWithToken(TestTokens.For(tenantId, subjectId, groups));
+
+    /// <summary>A client holding the tenant administrator role.</summary>
+    public HttpClient CreateAdminClientFor(Guid tenantId, string subjectId = "admin") =>
+        CreateClientWithToken(TestTokens.For(tenantId, subjectId, roles: ["eka.admin"]));
+
+    /// <summary>A client presenting exactly this token: the security tests' forged and expired ones too.</summary>
+    public HttpClient CreateClientWithToken(string token)
     {
         var client = CreateClient();
 
-        client.DefaultRequestHeaders.Add("X-EKA-Tenant", tenantId.ToString());
-        client.DefaultRequestHeaders.Add("X-EKA-Subject", subjectId);
-        if (groups.Length > 0)
-        {
-            client.DefaultRequestHeaders.Add("X-EKA-Groups", string.Join(',', groups));
-        }
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         client.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
 

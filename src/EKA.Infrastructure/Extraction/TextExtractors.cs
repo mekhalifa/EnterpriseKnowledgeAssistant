@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using EKA.Application.Abstractions.Ingestion;
+using Microsoft.Extensions.Options;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
@@ -38,7 +39,7 @@ internal static class ParserFailure
 /// and tables can come out in a surprising order, which is the gap Azure Document
 /// Intelligence would close (ADR-0022).
 /// </remarks>
-internal sealed class PdfTextExtractor : ITextExtractor
+internal sealed class PdfTextExtractor(IOptions<ExtractionLimits> limits) : ITextExtractor
 {
     public bool CanExtract(DocumentFileType fileType) => fileType is DocumentFileType.Pdf;
 
@@ -47,6 +48,14 @@ internal sealed class PdfTextExtractor : ITextExtractor
         try
         {
             using var pdf = PdfDocument.Open(content);
+
+            // Step 12: checked from the page tree before any page is parsed. A small file can
+            // declare a huge page count, and each page parsed costs time and memory.
+            if (pdf.NumberOfPages > limits.Value.MaxPdfPages)
+            {
+                throw new UnreadableDocumentException(
+                    $"The PDF has {pdf.NumberOfPages} pages; the limit is {limits.Value.MaxPdfPages}. Split it into smaller documents.");
+            }
 
             var sections = new List<ExtractedSection>(pdf.NumberOfPages);
             foreach (var page in pdf.GetPages())
@@ -57,7 +66,7 @@ internal sealed class PdfTextExtractor : ITextExtractor
 
             return Task.FromResult(new ExtractedDocument(sections));
         }
-        catch (Exception exception) when (ParserFailure.IsPermanent(exception))
+        catch (Exception exception) when (exception is not UnreadableDocumentException && ParserFailure.IsPermanent(exception))
         {
             throw new UnreadableDocumentException($"The PDF could not be read: {exception.Message}", exception);
         }
@@ -71,7 +80,7 @@ internal sealed class PdfTextExtractor : ITextExtractor
 /// that fakes headings with bold body text yields one big section. That is the honest result
 /// of formatting that carries no structure.
 /// </remarks>
-internal sealed class DocxTextExtractor : ITextExtractor
+internal sealed class DocxTextExtractor(IOptions<ExtractionLimits> limits) : ITextExtractor
 {
     public bool CanExtract(DocumentFileType fileType) => fileType is DocumentFileType.Docx;
 
@@ -79,6 +88,15 @@ internal sealed class DocxTextExtractor : ITextExtractor
     {
         try
         {
+            // Step 12: the package's real decompressed size is measured before the SDK reads it.
+            // The guard rewinds, so it needs a seekable stream; stored files are.
+            if (!content.CanSeek)
+            {
+                throw new ArgumentException("Word extraction needs a seekable stream.", nameof(content));
+            }
+
+            ZipBombGuard.Check(content, limits.Value);
+
             using var word = WordprocessingDocument.Open(content, isEditable: false);
             var body = word.MainDocumentPart?.Document?.Body
                 ?? throw new UnreadableDocumentException("The Word document has no body.");

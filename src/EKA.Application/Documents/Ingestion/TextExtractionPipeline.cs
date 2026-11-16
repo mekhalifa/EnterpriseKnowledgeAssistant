@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using EKA.Application.Abstractions.Ingestion;
+using Microsoft.Extensions.Options;
 
 namespace EKA.Application.Documents.Ingestion;
 
@@ -22,9 +23,12 @@ namespace EKA.Application.Documents.Ingestion;
 /// Rejecting it gives the user a reason they can act on.
 /// </para>
 /// </remarks>
-public sealed partial class TextExtractionPipeline(IEnumerable<ITextExtractor> extractors)
+public sealed partial class TextExtractionPipeline(IEnumerable<ITextExtractor> extractors, IOptions<IngestionOptions>? options = null)
 {
     private readonly IReadOnlyList<ITextExtractor> _extractors = [.. extractors];
+
+    /// <summary>Step 12: the most text one document may yield. See <see cref="IngestionOptions.MaxExtractedCharacters"/>.</summary>
+    private readonly int _maxCharacters = (options?.Value ?? new IngestionOptions()).MaxExtractedCharacters;
 
     public async Task<ExtractedDocument> ExtractAsync(
         DocumentFileType fileType,
@@ -47,7 +51,18 @@ public sealed partial class TextExtractionPipeline(IEnumerable<ITextExtractor> e
                 "The file contains no extractable text. If it is a scanned document, it needs OCR, which is not supported yet.");
         }
 
-        return new ExtractedDocument(sections);
+        var document = new ExtractedDocument(sections);
+
+        // A 25 MB upload can hold far more text than a policy document ever does: a log dump,
+        // a generated file, an attempt to run up the embedding bill. Refused here, before
+        // chunking and embedding make it expensive.
+        if (document.CharacterCount > _maxCharacters)
+        {
+            throw new UnreadableDocumentException(
+                $"The document contains {document.CharacterCount:N0} characters of text; the limit is {_maxCharacters:N0}. Split it into smaller documents.");
+        }
+
+        return document;
     }
 
     /// <summary>

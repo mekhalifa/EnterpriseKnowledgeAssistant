@@ -1,6 +1,6 @@
 # Local development dependencies for the Enterprise Knowledge Assistant.
 #
-# SQL Server since Step 3, Qdrant since Step 8. Redis arrives in Step 12, and the API and
+# SQL Server since Step 3, Qdrant since Step 8, Keycloak since Step 12. The API and
 # worker containers in Step 14 — each added when something actually uses it, so
 # `docker compose up` never starts services that do nothing.
 #
@@ -77,6 +77,35 @@ services:
       interval: 5s
       timeout: 3s
       retries: 12
+
+  keycloak:
+    # Step 12: the local OpenID Connect provider (ADR-0031). Production uses Entra ID or a
+    # managed Keycloak; the API reads only standard claims, so the swap is configuration.
+    # Pinned like the others: a floating tag changes token claims under you.
+    image: quay.io/keycloak/keycloak:26.6.4
+    container_name: eka-keycloak
+    restart: unless-stopped
+    # start-dev: HTTP, no production hostname checks, an in-container H2 database. LOCAL ONLY.
+    # The realm (users, groups, roles, claim mappers) is imported from deploy/keycloak at start.
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set in deploy/.env}
+      # Fixes the issuer the tokens carry, so it equals Authentication:Jwt:Authority in
+      # appsettings.Development.json whatever address the request used.
+      KC_HOSTNAME: http://127.0.0.1:8080
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      # Readiness is served on the management port (9000), which is not published.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
 volumes:
   eka-sqldata:

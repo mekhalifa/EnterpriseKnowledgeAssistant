@@ -34,6 +34,7 @@ internal static class RetrievalEndpoints
 
         search.MapPost("/", SearchAsync)
             .WithName("SearchChunks")
+            .RequireRateLimiting(RateLimitingOptions.SearchPolicy)
             .WithSummary("Finds the chunks the caller may read that best match a question.")
             .WithValidation<SearchRequest>()
             .Produces<SearchResponse>()

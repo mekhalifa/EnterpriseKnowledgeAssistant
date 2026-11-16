@@ -174,6 +174,69 @@ public sealed class DocumentAccessControlTests
         document.Status.ShouldBe(Ingestion.IngestionStatus.Completed);
     }
 
+    // ── Management (Step 12) ────────────────────────────────────────────────────────
+
+    private static Ingestion.Document Owned(string owner = "olivia", params AccessPrincipal[] access) =>
+        new(Guid.NewGuid(), TestData.Tenant, TestData.Title(), TestData.Pdf(), "k", TestData.Now,
+            access: access.Length == 0 ? null : DocumentAccess.Of(access), ownerSubject: owner);
+
+    [Fact]
+    public void The_owner_and_an_administrator_may_manage_a_document_and_a_reader_may_not()
+    {
+        var document = Owned();
+
+        document.CanBeManagedBy(AccessScope.For(TestData.Tenant, "olivia")).ShouldBeTrue();
+        document.CanBeManagedBy(AccessScope.For(TestData.Tenant, "root", isAdministrator: true)).ShouldBeTrue();
+        document.CanBeManagedBy(AccessScope.For(TestData.Tenant, "bob")).ShouldBeFalse();
+        document.IsAccessibleTo(AccessScope.For(TestData.Tenant, "bob")).ShouldBeTrue(); // reads, cannot manage
+    }
+
+    [Fact]
+    public void Administration_stops_at_the_tenant_boundary()
+    {
+        Owned().CanBeManagedBy(AccessScope.For(OtherTenant, "root", isAdministrator: true)).ShouldBeFalse();
+        Owned().CanBeManagedBy(AccessScope.For(OtherTenant, "olivia")).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void An_administrator_may_manage_but_not_read_a_restricted_document()
+    {
+        // Administering and reading are separate privileges: the admin can repair the list,
+        // and gets no content through search or answers unless the list grants it.
+        var document = Owned("olivia", AccessPrincipal.Group("hr"));
+        var admin = AccessScope.For(TestData.Tenant, "root", isAdministrator: true);
+
+        document.CanBeManagedBy(admin).ShouldBeTrue();
+        document.IsVisibleTo(admin).ShouldBeTrue();
+        document.IsAccessibleTo(admin).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void An_owner_who_restricted_a_document_away_from_themselves_can_still_find_and_fix_it()
+    {
+        var document = Owned("olivia", AccessPrincipal.Group("hr"));
+        var olivia = AccessScope.For(TestData.Tenant, "olivia");
+
+        document.IsAccessibleTo(olivia).ShouldBeFalse();
+        document.IsVisibleTo(olivia).ShouldBeTrue();
+        document.CanBeManagedBy(olivia).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void An_unowned_document_is_managed_by_administrators_only()
+    {
+        var document = Owned(owner: null!);
+
+        document.CanBeManagedBy(AccessScope.For(TestData.Tenant, "anyone")).ShouldBeFalse();
+        document.CanBeManagedBy(AccessScope.For(TestData.Tenant, "root", isAdministrator: true)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Ownership_compares_subjects_exactly()
+    {
+        Owned("olivia").CanBeManagedBy(AccessScope.For(TestData.Tenant, "Olivia")).ShouldBeFalse();
+    }
+
     [Fact]
     public void A_document_can_be_created_restricted()
     {

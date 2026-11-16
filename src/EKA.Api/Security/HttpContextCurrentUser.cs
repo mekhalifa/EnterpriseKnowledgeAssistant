@@ -1,57 +1,33 @@
 using System.Security.Claims;
 using EKA.Application.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace EKA.Api.Security;
 
 /// <summary>
-/// Reads the caller's identity from the current HTTP request.
+/// Reads the caller's identity from the validated access token of the current request.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Until Step 12 wires an identity provider, both properties return null for every
-/// request.</b> That is not a bug and it does not fail: the audit interceptor records
-/// <c>"system"</c> when no subject is present. It does mean audit columns carry no real
-/// attribution yet, which is listed as a known limitation in docs/PROGRESS.md.
+/// <b>Claim names as issued.</b> Inbound claim mapping is off (<see cref="JwtAuthentication"/>),
+/// so <c>sub</c>, <c>tid</c>, <c>groups</c> and <c>roles</c> arrive under those names, from
+/// Keycloak and Entra ID alike. <c>ClaimTypes.NameIdentifier</c> is still read as a fallback, in
+/// case mapping is ever switched back on: reading only one of the two would then silently
+/// yield null.
 /// </para>
 /// <para>
-/// The claim types are the ones a standard OIDC provider issues. <c>sub</c> is checked as
-/// well as <c>ClaimTypes.NameIdentifier</c> because ASP.NET Core's JWT handler maps
-/// <c>sub</c> to the latter by default, but that mapping is frequently turned off — and
-/// when it is, reading only one of the two silently yields null.
+/// Everything here comes from a token whose signature, issuer, audience and lifetime were
+/// checked before this class runs. Nothing is read from headers, the query or the body.
 /// </para>
 /// </remarks>
-internal sealed class HttpContextCurrentUser : ICurrentUser
+internal sealed class HttpContextCurrentUser(
+    IHttpContextAccessor httpContextAccessor,
+    IOptions<JwtAuthenticationOptions> jwt) : ICurrentUser
 {
-    /// <summary>Claim carrying the tenant id. Entra ID issues <c>tid</c>.</summary>
-    private const string TenantClaim = "tid";
+    public string? SubjectId => Claim(ClaimTypes.NameIdentifier, "sub");
 
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    public HttpContextCurrentUser(IHttpContextAccessor httpContextAccessor)
-    {
-        _httpContextAccessor = httpContextAccessor;
-    }
-
-    public string? SubjectId
-    {
-        get
-        {
-            var principal = _httpContextAccessor.HttpContext?.User;
-
-            return principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                   ?? principal?.FindFirst("sub")?.Value;
-        }
-    }
-
-    public Guid? TenantId
-    {
-        get
-        {
-            var raw = _httpContextAccessor.HttpContext?.User.FindFirst(TenantClaim)?.Value;
-
-            return Guid.TryParse(raw, out var tenantId) ? tenantId : null;
-        }
-    }
+    public Guid? TenantId =>
+        Guid.TryParse(Claim(JwtAuthentication.TenantClaim), out var tenantId) ? tenantId : null;
 
     /// <summary>
     /// <c>email</c> as OIDC providers send it, or the mapped <see cref="ClaimTypes.Email"/>.
@@ -60,26 +36,29 @@ internal sealed class HttpContextCurrentUser : ICurrentUser
     /// </summary>
     public string? Email => Claim(ClaimTypes.Email, "email") ?? Claim("preferred_username");
 
-    public string? DisplayName => Claim(ClaimTypes.Name, "name");
+    public string? DisplayName => Claim(ClaimTypes.Name, "name") ?? Claim("preferred_username");
 
     /// <summary>
-    /// Every <c>groups</c> claim. Entra ID issues one claim per group, with the group's object id.
+    /// Every <c>groups</c> claim: one per group id (Entra ID object ids; Keycloak group names
+    /// with the full-path option off).
     /// </summary>
     /// <remarks>
-    /// Entra ID stops listing groups past a limit (200 in a JWT) and sends a pointer to Graph
-    /// instead: the "groups overage" claim. A caller in that situation gets no groups here, so
-    /// sees less, never more. Resolving the overage is Step 12's job, with the real provider.
+    /// Entra ID stops listing groups past a limit (200 in a JWT) and sends a pointer to Microsoft
+    /// Graph instead (the "groups overage" claim). Resolving it needs a Graph call with its own
+    /// permission, which this application does not have. A caller in that situation gets no
+    /// groups here, so sees less, never more: fail closed. Recorded in the threat model.
     /// </remarks>
-    public IReadOnlyList<string> Groups =>
-        _httpContextAccessor.HttpContext?.User.FindAll(GroupsClaim).Select(claim => claim.Value).ToList()
-        ?? [];
+    public IReadOnlyList<string> Groups => Values(JwtAuthentication.GroupsClaim);
 
-    /// <summary>Claim carrying a group id, one per group.</summary>
-    internal const string GroupsClaim = "groups";
+    /// <summary>The configured administrator role is among the token's <c>roles</c>.</summary>
+    public bool IsAdministrator => Values(JwtAuthentication.RolesClaim).Contains(jwt.Value.AdminRole, StringComparer.Ordinal);
+
+    private IReadOnlyList<string> Values(string type) =>
+        httpContextAccessor.HttpContext?.User.FindAll(type).Select(claim => claim.Value).ToList() ?? [];
 
     private string? Claim(params string[] types)
     {
-        var principal = _httpContextAccessor.HttpContext?.User;
+        var principal = httpContextAccessor.HttpContext?.User;
 
         return types
             .Select(type => principal?.FindFirst(type)?.Value)

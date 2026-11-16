@@ -55,6 +55,7 @@ internal static class DocumentEndpoints
 
         documents.MapPost("/", UploadAsync)
             .WithName("UploadDocument")
+            .RequireRateLimiting(RateLimitingOptions.UploadPolicy)
             .WithSummary("Uploads a file for ingestion. The same bytes uploaded twice return the first document.")
             .Accepts<UploadDocumentMetadata>("multipart/form-data")
             .ProducesValidationProblem()

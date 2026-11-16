@@ -107,14 +107,19 @@ internal sealed class DocumentRepository : IDocumentRepository
 
         var tenantId = caller.TenantId;
         var callerKeys = caller.Keys.ToList();
+        var subject = caller.SubjectId;
+        var isAdministrator = caller.IsAdministrator;
 
         // Built once and reused for both the count and the page, so the two cannot drift
-        // apart as the filter grows. Tenant and access are applied before anything else and
-        // are not optional. Access is the domain rule (Document.IsAccessibleTo) written in
-        // SQL: the document's keys and the caller's share an entry.
+        // apart as the filter grows. Tenant and visibility are applied before anything else and
+        // are not optional. Visibility is the domain rule (Document.IsVisibleTo) written in SQL:
+        // the document's keys and the caller's share an entry, or the caller owns it, or
+        // administers the tenant. Content (search, answers) is stricter: access list only.
         var query = _context.Documents.Where(document =>
             document.TenantId == tenantId
-            && document.AccessKeys.Any(key => callerKeys.Contains(key)));
+            && (isAdministrator
+                || document.OwnerSubject == subject
+                || document.AccessKeys.Any(key => callerKeys.Contains(key))));
 
         if (status is not null)
         {

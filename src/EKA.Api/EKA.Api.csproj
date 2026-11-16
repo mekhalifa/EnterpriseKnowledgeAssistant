@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <!--
       EF Core tooling, needed here because EKA.Api is the startup project that
       `dotnet ef` builds to discover the DbContext and its configuration.

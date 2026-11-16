@@ -24,6 +24,13 @@ public sealed class IngestionOptions
 
     /// <summary>Documents re-enqueued per sweep. Bounds the burst after a long queue outage.</summary>
     public int SweepBatchSize { get; set; } = 100;
+
+    /// <summary>
+    /// The most text one document may yield (Step 12). Two million characters is about 500,000
+    /// tokens, around 1,000 dense pages: far beyond any policy, and about one US cent of
+    /// embeddings, so a single upload cannot run up the bill.
+    /// </summary>
+    public int MaxExtractedCharacters { get; set; } = 2_000_000;
 }
 
 internal sealed class IngestionOptionsValidator : IValidateOptions<IngestionOptions>
@@ -48,6 +55,11 @@ internal sealed class IngestionOptionsValidator : IValidateOptions<IngestionOpti
         if (options.SweepBatchSize is < 1 or > 10_000)
         {
             failures.Add($"{section}:SweepBatchSize must be between 1 and 10000.");
+        }
+
+        if (options.MaxExtractedCharacters is < 1_000 or > 50_000_000)
+        {
+            failures.Add($"{section}:MaxExtractedCharacters must be between 1000 and 50000000.");
         }
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
