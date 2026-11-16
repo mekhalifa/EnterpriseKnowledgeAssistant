@@ -88,14 +88,16 @@ internal sealed class EkaApiFactory(
         {
             services.Replace(ServiceDescriptor.Singleton<IChatCompletionService>(Chat));
 
-            // Step 9: the API embeds search questions. Retrieval tests hand it the same
-            // stand-in the worker embeds chunks with, so both sides share one vector space.
-            if (embeddings is not null)
-            {
-                services.Replace(ServiceDescriptor.Singleton(embeddings));
-            }
+            // Always replaced, never left real. Since Step 10 every question is embedded, and the
+            // real adapter would make billed calls with a developer's key from User Secrets, or
+            // fail on the placeholder key in CI (step-10 section 5.1). Retrieval tests pass the
+            // stand-in their worker uses, so both sides share one vector space.
+            services.Replace(ServiceDescriptor.Singleton(Embeddings));
         });
     }
+
+    /// <summary>The embedding stand-in the API uses: the one passed in, or a fresh one.</summary>
+    public IEmbeddingService Embeddings { get; } = embeddings ?? new DeterministicEmbeddingService();
 
     /// <summary>
     /// A client that presents the given tenant on every request.
@@ -165,6 +167,9 @@ internal sealed class RecordingChatService : IChatCompletionService
     /// <summary>When set, every call fails with this error instead of answering.</summary>
     public Error? FailWith { get; set; }
 
+    /// <summary>When set, the reply to every call, e.g. an answer with citation markers.</summary>
+    public string? Reply { get; set; }
+
     public Task<Result<ChatCompletion>> CompleteAsync(
         IReadOnlyList<ChatTurn> conversation,
         CancellationToken cancellationToken = default)
@@ -174,11 +179,16 @@ internal sealed class RecordingChatService : IChatCompletionService
             _prompts.Add(conversation);
         }
 
-        // Echo the question, so a test can tell which answer belongs to which question.
+        // Echo the question, so a test can tell which answer belongs to which question. Since
+        // Step 10 the last turn is "Sources: … Question: <q>"; the echo is of <q> alone.
+        var asked = conversation[^1].Content;
+        var marker = asked.LastIndexOf("Question: ", StringComparison.Ordinal);
+        var question = marker < 0 ? asked : asked[(marker + "Question: ".Length)..];
+
         Result<ChatCompletion> result = FailWith is { } error
             ? error
             : new ChatCompletion(
-                $"Answer to: {conversation[^1].Content}",
+                Reply ?? $"Answer to: {question}",
                 "test.provider",
                 "test-model",
                 new TokenCount(40),

@@ -122,6 +122,7 @@ public sealed class RoundTripTests
                         "Employee Handbook",
                         new ChunkIndex(4),
                         new SimilarityScore(0.91),
+                        1,
                         new PageRange(12, 13),
                         "Benefits / Leave"),
                 ],
@@ -156,6 +157,7 @@ public sealed class RoundTripTests
         citation.DocumentTitle.ShouldBe("Employee Handbook");
         citation.ChunkIndex.Value.ShouldBe(4);
         citation.Score.Value.ShouldBe(0.91, tolerance: 1e-9);
+        citation.Number.ShouldBe(1);
         citation.PageRange!.Start.ShouldBe(12);
         citation.SectionPath.ShouldBe("Benefits / Leave");
     }

@@ -93,6 +93,7 @@ internal static class TenantPolicy
             currentUser.RequireTenantId(),
             subject,
             currentUser.Email,
-            currentUser.DisplayName);
+            currentUser.DisplayName,
+            currentUser.Groups);
     }
 }

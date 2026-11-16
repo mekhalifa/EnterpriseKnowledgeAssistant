@@ -169,6 +169,22 @@ public sealed class SchemaMigrationTests
             .ShouldBeNull();
     }
 
+    [Fact]
+    public async Task The_grounded_v2_template_is_the_one_active_default_and_v1_is_kept_inactive()
+    {
+        // ADR-0019: a new version is a new row; the old one stays, readable and switched off.
+        await using var context = _fixture.CreateContext();
+
+        var versions = await context.PromptTemplates.AsNoTracking()
+            .Where(template => template.Name == "default")
+            .OrderBy(template => template.Version)
+            .ToListAsync();
+
+        versions.Select(template => (template.Version, template.IsActive)).ShouldBe([(1, false), (2, true)]);
+        versions[1].SupportsGrounding.ShouldBeTrue();
+        versions[0].SupportsGrounding.ShouldBeFalse();
+    }
+
     private static async Task<bool> TableExistsAsync(DbContext context, string tableName)
     {
         var result = await ScalarAsync<int?>(

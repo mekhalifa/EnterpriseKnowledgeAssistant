@@ -27,8 +27,8 @@ public sealed class ConversationTests
             TestData.Now,
             citations);
 
-    private static Citation Cite(Guid documentId, int chunkIndex, double score) =>
-        new(documentId, "Employee Handbook", new ChunkIndex(chunkIndex), new SimilarityScore(score));
+    private static Citation Cite(Guid documentId, int chunkIndex, double score, int number = 1) =>
+        new(documentId, "Employee Handbook", new ChunkIndex(chunkIndex), new SimilarityScore(score), number);
 
     // ── Construction ────────────────────────────────────────────────────────────────
 
@@ -248,22 +248,21 @@ public sealed class ConversationTests
     }
 
     [Fact]
-    public void Citations_are_deduplicated_and_ordered_by_score()
+    public void Citations_are_deduplicated_and_ordered_by_their_marker_not_their_score()
     {
-        // Retrieval regularly returns several chunks from the same document; the reader
-        // does not want one source listed five times.
+        // The reader follows [1], [2] through the text; the source list reads in that order,
+        // even when [2] scored higher than [1] (Step 10).
         var conversation = NewConversation();
         var documentId = Guid.NewGuid();
 
         var message = AssistantMessage(conversation, citations:
         [
-            Cite(documentId, 3, 0.55),
-            Cite(documentId, 1, 0.95),
-            Cite(documentId, 3, 0.55),
+            Cite(documentId, 3, 0.55, number: 1),
+            Cite(documentId, 1, 0.95, number: 2),
+            Cite(documentId, 3, 0.55, number: 1),
         ]);
 
-        message.Citations.Count.ShouldBe(2);
-        message.Citations.Select(c => c.ChunkIndex.Value).ShouldBe([1, 3]);
+        message.Citations.Select(c => (c.Number, c.ChunkIndex.Value)).ShouldBe([(1, 3), (2, 1)]);
     }
 
     [Fact]
@@ -273,11 +272,43 @@ public sealed class ConversationTests
 
         var message = AssistantMessage(conversation, citations:
         [
-            Cite(Guid.NewGuid(), 0, 0.9),
-            Cite(Guid.NewGuid(), 0, 0.8),
+            Cite(Guid.NewGuid(), 0, 0.9, number: 1),
+            Cite(Guid.NewGuid(), 0, 0.8, number: 2),
         ]);
 
         message.Citations.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public void Two_different_sources_cannot_share_a_marker()
+    {
+        var conversation = NewConversation();
+
+        Should.Throw<DomainException>(() => AssistantMessage(conversation, citations:
+        [
+            Cite(Guid.NewGuid(), 0, 0.9, number: 1),
+            Cite(Guid.NewGuid(), 0, 0.8, number: 1),
+        ]));
+    }
+
+    [Fact]
+    public void A_citation_marker_starts_at_one()
+    {
+        Should.Throw<DomainException>(() => Cite(Guid.NewGuid(), 0, 0.9, number: 0));
+    }
+
+    [Fact]
+    public void A_no_evidence_refusal_is_an_ungrounded_answer_that_names_no_model()
+    {
+        var conversation = NewConversation();
+
+        var refusal = Message.NoEvidenceRefusal(Guid.NewGuid(), conversation.Id, "Not covered by your documents.", TestData.Now);
+
+        refusal.Role.ShouldBe(MessageRole.Assistant);
+        refusal.IsNoEvidenceRefusal.ShouldBeTrue();
+        refusal.IsUngrounded.ShouldBeTrue();
+        refusal.ModelName.ShouldBe(Message.NoEvidenceModel);
+        AssistantMessage(conversation).IsNoEvidenceRefusal.ShouldBeFalse();
     }
 
     [Fact]
@@ -307,9 +338,9 @@ public sealed class ConversationTests
     public void A_citation_must_reference_a_document_and_record_its_title()
     {
         Should.Throw<DomainException>(
-            () => new Citation(Guid.Empty, "Title", ChunkIndex.First, SimilarityScore.Exact));
+            () => new Citation(Guid.Empty, "Title", ChunkIndex.First, SimilarityScore.Exact, 1));
 
         Should.Throw<DomainException>(
-            () => new Citation(Guid.NewGuid(), "  ", ChunkIndex.First, SimilarityScore.Exact));
+            () => new Citation(Guid.NewGuid(), "  ", ChunkIndex.First, SimilarityScore.Exact, 1));
     }
 }

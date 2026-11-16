@@ -233,6 +233,31 @@ public sealed class RetrievalEndToEndTests : IAsyncLifetime
         (await SearchAsync(client, "leave")).Hits.ShouldBeEmpty();
     }
 
+    // ── Step 10: upload to cited answer ────────────────────────────────────────────
+
+    [Fact]
+    public async Task An_uploaded_document_becomes_a_cited_answer()
+    {
+        var client = _api.CreateClientFor(_tenantA, "alice");
+        var document = await UploadAndIndexAsync(client, Policy());
+        _api.Chat.Reply = "You receive 25 days of annual leave [1].";
+
+        var started = await client.PostAsync("/api/conversations", content: null);
+        var conversation = (await started.Content.ReadFromJsonAsync<Contracts.Conversations.ConversationResponse>())!;
+        var asked = await client.PostAsJsonAsync(
+            $"/api/conversations/{conversation.Id}/messages", new Contracts.Conversations.AskQuestionRequest("How much annual leave do I get?"));
+
+        asked.StatusCode.ShouldBe(HttpStatusCode.OK, await asked.Content.ReadAsStringAsync());
+        var exchange = (await asked.Content.ReadFromJsonAsync<Contracts.Conversations.AskQuestionResponse>())!;
+        exchange.Grounding.ShouldBe("cited");
+        var citation = exchange.Answer.Citations.ShouldHaveSingleItem();
+        citation.DocumentId.ShouldBe(document.Id);
+        citation.SectionPath.ShouldBe("Leave");
+
+        // The model was shown the chunk the worker produced, as source 1.
+        _api.Chat.Prompts.Single()[^1].Content.ShouldContain("Employees receive 25 days of annual leave.");
+    }
+
     // ── The contract ───────────────────────────────────────────────────────────────
 
     [Fact]

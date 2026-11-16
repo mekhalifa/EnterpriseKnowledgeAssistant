@@ -44,17 +44,25 @@ public sealed record Citation
         DocumentTitle = string.Empty;
     }
 
+    /// <param name="number">The marker this citation answers to in the answer text: <c>[1]</c>
+    /// is number 1. See <see cref="Number"/>.</param>
     public Citation(
         Guid documentId,
         string documentTitle,
         ChunkIndex chunkIndex,
         SimilarityScore score,
+        int number,
         PageRange? pageRange = null,
         string? sectionPath = null)
     {
         if (documentId == Guid.Empty)
         {
             throw new DomainException("A citation must reference a document.");
+        }
+
+        if (number < 1)
+        {
+            throw new DomainException($"A citation's marker number starts at 1; got {number}.");
         }
 
         if (string.IsNullOrWhiteSpace(documentTitle))
@@ -66,6 +74,7 @@ public sealed record Citation
         DocumentTitle = documentTitle.Trim();
         ChunkIndex = chunkIndex;
         Score = score;
+        Number = number;
         PageRange = pageRange;
         SectionPath = sectionPath?.Trim();
     }
@@ -78,6 +87,16 @@ public sealed record Citation
     public ChunkIndex ChunkIndex { get; }
 
     public SimilarityScore Score { get; }
+
+    /// <summary>
+    /// The marker in the answer text that points here: <c>[2]</c> is number 2 (Step 10).
+    /// </summary>
+    /// <remarks>
+    /// Stored, not implied by position. Citations live in their own table, and a relational
+    /// database returns rows in no promised order, so "the second citation" is not a fact
+    /// anyone can rely on after a round trip. The number is.
+    /// </remarks>
+    public int Number { get; }
 
     public PageRange? PageRange { get; }
 

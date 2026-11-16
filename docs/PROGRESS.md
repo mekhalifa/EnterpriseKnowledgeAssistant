@@ -3,43 +3,41 @@
 Single source of truth for project state. Updated at the end of every working session.
 
 **Last updated:** 2026-11-16
-**Current step:** Step 9 complete → Step 10 next
-**Overall:** Phase C in progress, 9 of 14 steps done
-**Branch:** `step-09-retrieval-acl` (branched from `step-08-chunking-embeddings`; none merged to `main`)
+**Current step:** Step 10 complete → Step 11 next
+**Overall:** Phase C in progress, 10 of 14 steps done
+**Branch:** `step-10-grounded-answers` (branched from `step-09-retrieval-acl`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**Step 10 — RAG answer generation with citations.**
-Exit criterion: *answers carry verifiable citations; unanswerable questions are refused
-rather than fabricated.*
+**Step 11 — Evaluation.**
+Exit criterion: *a baseline report exists and regressions fail the build.*
 
 **Decisions needed first:**
 
 | Decision | Options |
 |---|---|
-| Refusal mechanism | Short-circuit with no model call when retrieval is empty (cheap, deterministic) vs always ask the model with an instruction to refuse (handles "retrieved but irrelevant") — likely both |
-| Citation format | Model emits markers (`[1]`) mapped back to retrieved chunks vs citing every retrieved chunk regardless of use |
-| Prompt template v2 | New seeded version via migration (ADR-0019) with a context section and the trust boundary for document text |
+| Where the evaluation runs | A test project gated by category (like `Smoke`) vs a separate console tool producing a report; what CI runs on every PR vs nightly |
+| Groundedness scoring | LLM-as-judge (cost, judge bias, needs its own prompt version) vs claim/source overlap heuristics vs human-labelled sample |
+| The question set | Size and source: hand-written against a fixed corpus checked into the repo; expected source per question; include unanswerable and follow-up questions |
+| Regression gate | Absolute thresholds vs "no worse than baseline minus tolerance"; how to keep a stochastic model from flaking the build |
 
 Then:
 
-1. `AskQuestionHandler` calls `ChunkRetriever` with the caller's `AccessScope` (the slice
-   must now build one; today it takes `CallerIdentity`), before the model.
-2. `PromptBuilder` gains a bounded context section: retrieved chunks within a token budget,
-   document text clearly delimited as **untrusted data**, never instructions (`MessageRole`
-   trust boundary; prompt-injection test).
-3. Persist `Citation`s on the assistant message (document, chunk index, pages, section, score);
-   `IsUngrounded` false only when at least one citation backs the answer.
-4. Expose citations in `AskQuestionResponse` / `GetConversation`.
-5. Tests: answer with citations end to end; empty retrieval → refusal with no model call; a
-   restricted document never reaches a non-member's prompt (assert on the recorded prompt);
-   injected instructions in a document do not change behaviour.
+1. A fixed evaluation corpus (a few Markdown/PDF policies) and a question set with expected
+   documents/sections, unanswerable questions, restricted-document questions, and follow-ups.
+2. Retrieval metrics without any chat call: hit-rate@K, MRR, per-question top source —
+   deterministic given fixed embeddings (cache them to keep runs cheap and repeatable).
+3. Answer metrics: refusal correctness (should refuse / should answer), citation correctness
+   (cited the expected source), groundedness (does the source support the claim — the Step 10
+   taxi over-reach is the first case).
+4. Persist the prompt template version on each answer (open since Step 6) so runs compare.
+5. A baseline report checked in; a gate that fails on regression; tune `Retrieval:MinimumScore`
+   and top-K from the data (ADR-0028 left them as guesses).
 
-Reference: [adr/0028](adr/0028-retrieval-contract.md) (empty = success),
-[adr/0019](adr/0019-prompt-templates-seeded-by-migration.md),
-[steps/step-09](steps/step-09-retrieval-acl.md) §7.
+Reference: [steps/step-10](steps/step-10-grounded-answers.md) §6 (first observations),
+[adr/0028](adr/0028-retrieval-contract.md), [adr/0029](adr/0029-grounded-answers-refusal-and-citations.md).
 
 ---
 
@@ -332,6 +330,39 @@ persisted messages", so they belong there. Document upload of actual bytes is St
    identity when headers are absent. 401 is tested with a malformed identity, as before.
 3. Single-array `InlineData` does not compile; a zero score floor no longer sends a threshold.
 
+#### Step 10 — Grounded answers with citations ✅
+
+- **Exit criterion met twice:** in-process (upload → real worker → ask → cited answer whose
+  citation is the uploaded document; refusal without a model call; restricted text absent from
+  a non-member's prompt; forged delimiters defused) and on the real stack with **gpt-4o-mini +
+  real embeddings**: cited answers for covered questions, the model's own refusal for a
+  related-but-uncovered question (`uncited`), `no_evidence` with no model call for off-topic and
+  restricted questions, and a planted "reply PWNED" instruction **ignored**.
+- Decided with the owner ([ADR-0029](adr/0029-grounded-answers-refusal-and-citations.md)):
+  two-layer refusal; numbered `[n]` markers parsed, validated and renumbered by the app; the raw
+  question for retrieval.
+- `AskQuestionHandler`: retrieve (same `ChunkRetriever`, caller's `AccessScope`) → sources
+  before history within `Chat:MaxContextTokens` (3,000) → refuse or ask → extract → persist the
+  turn atomically. Response: `grounding` (`cited`/`uncited`/`no_evidence`), sources
+  retrieved/provided, citations on every message.
+- `SourceRenderer` (delimited `<source>` blocks, tag forgery defused) and `CitationMarkers`
+  (extract/renumber; strip markers from history).
+- Domain: `Citation.Number` (stored: row order is not promised), marker-ordered citations,
+  `Message.NoEvidenceRefusal`.
+- Migration `GroundedAnswers`: `Number` backfilled per message, no default; prompt template
+  **v2** seeded active, v1 kept inactive.
+- **611 tests** (+3 domain, +24 application, +6 integration).
+
+**Found and fixed, all recorded in [step-10](steps/step-10-grounded-answers.md):**
+
+1. **The test suite was about to make billed calls:** the API test factory replaced the chat
+   model but not the embedding service, and every question now embeds. It now always replaces
+   both.
+2. The generated migration defaulted `Number` to 0 against a domain rule of ≥ 1 — rewritten as
+   nullable → backfill → NOT NULL, as in Step 9.
+3. Four Step 6 tests assumed an ungrounded world; they now seed evidence, and "no documents"
+   has its own no-model-call test.
+
 ---
 
 ## Step checklist
@@ -347,8 +378,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | 7 | Document ingestion | ✅ Complete — 429 tests |
 | 8 | Chunking + embeddings | ✅ Complete — 477 tests |
 | 9 | Vector retrieval with ACL filtering | ✅ Complete — 578 tests |
-| 10 | RAG answer generation with citations | ⬜ Next |
-| 11 | Evaluation | ⬜ Not started |
+| 10 | RAG answer generation with citations | ✅ Complete — 611 tests |
+| 11 | Evaluation | ⬜ Next |
 | 12 | Security and enterprise controls | ⬜ Not started |
 | 13 | Angular 21 client | ⬜ Not started |
 | 14 | Deployment and release readiness | ⬜ Not started |
@@ -366,6 +397,9 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | Step 12 | Grants table vs JSON column | JSON column suffices until an admin report needs "everything group X can read" |
 | Step 11 | Chunk size and algorithm | 500/75 section-aware is a starting point; compare against semantic or parent/child with evidence ([ADR-0024](adr/0024-section-aware-chunking-deterministic-point-ids.md)) |
 | Step 11 | Persist the prompt template version on each answer | Reported in `AskQuestionResponse` today, not stored; evaluation will need it ([ADR-0019](adr/0019-prompt-templates-seeded-by-migration.md)) |
+| Step 11 | Follow-up retrieval | Raw question today ([ADR-0029](adr/0029-grounded-answers-refusal-and-citations.md)); add LLM query rewriting if the follow-up hit rate is poor |
+| Step 11 | Groundedness check | Cited ≠ supported (the taxi over-reach, step-10 §6): measure first; a verification pass or stricter instruction only if common |
+| Step 13 | Streaming and citations | Marker extraction needs the whole answer; stream text, then send citations at the end |
 | Step 12 | Identity provider | Entra ID vs Keycloak vs ASP.NET Core Identity |
 | Step 12 | EF global query filters | As *defence in depth* on top of explicit tenant parameters, not instead of them — see ADR-0009 |
 | Step 12 | `AIProvider` rows vs `Ai` configuration | The seeded row records what a prompt was written for; configuration chooses what answers. Reconcile or drop the table |
@@ -382,7 +416,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | Embedding dimension change | Forces a full re-index | Model recorded per chunk; the adapter refuses vectors of another size (Step 8); searches filter on `embedding_model`, so a same-size model swap cannot mix spaces (Step 9) |
 | Cross-tenant vector query | Qdrant isolation is a payload filter, not a boundary | A search filter without a tenant is refused before I/O; every hit re-checked in SQL; proved with identical documents in two tenants (Step 9) |
 | Access-payload drift | The Qdrant copy of access keys can lag SQL | Fails closed (SQL re-check); "dropped by the SQL re-check" logged per search; reconciliation job if it stays above zero |
-| Prompt injection via document content | Uploaded documents are untrusted input | `MessageRole` is a trust boundary; tested in Step 10 |
+| Prompt injection via document content | Uploaded documents are untrusted input | Document text only in the user turn, inside `<source>` delimiters it cannot forge (tested); v2 instruction treats sources as data; a planted instruction was ignored by gpt-4o-mini on the real stack (Step 10). Model compliance is not guaranteed — add injection cases to Step 11's set |
+| Cited but unsupported answers | A correct citation can sit on an over-reaching claim | Observed on the real stack (step-10 §6); measured as groundedness in Step 11 |
 | Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer, client errors never retried (Step 5, tested); token budgets, caching, rate limits in Step 12 |
 | Third-party data path | OpenRouter sits between us and the model vendor | Learning data only until the decision above is made; switching to OpenAI direct or Azure is configuration (ADR-0015) |
 | Scope creep into agents/GraphRAG | Burns the 12 weeks before the basics work | The out-of-scope list in the learning path |
@@ -446,8 +481,18 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 - **Archiving has no endpoint**, so the domain's "archived conversations accept no messages"
   rule is unreachable over HTTP. It throws `DomainException` (500), not
   `InvalidStateTransitionException` (409) — fix before an archive endpoint ships.
-- **No answer citations yet.** Every answer is `IsUngrounded`; v1's instruction says so to
-  the model. Retrieval exists (Step 9); the chat flow does not call it until Step 10.
+- **A citation proves provenance, not support.** It names the chunk the model pointed at;
+  whether that chunk backs the sentence is unmeasured until Step 11.
+- **A model's own refusal is recognised only by citing nothing** (`grounding = uncited`); a
+  hedged cited answer and a correct uncited one are not told apart.
+- **Follow-ups without meaning of their own retrieve poorly** ("can I carry those over?"):
+  retrieval embeds the latest question only ([ADR-0029](adr/0029-grounded-answers-refusal-and-citations.md)).
+- **An out-of-range 1–3 digit bracketed number is removed from an answer** (`[7]` when five
+  sources were given), even if it was a footnote rather than a citation.
+- **The no-evidence answer is configuration, not a versioned template field,** so its wording
+  is not evaluated alongside the prompt.
+- **The test factory always fakes the embedding model.** Real embeddings in the API are covered
+  only by the real-stack runs and EKA.AI's smoke tests.
 - **Anyone who can read a document can change its access** — including restricting it so
   they lose access themselves. Roles arrive in Step 12 ([ADR-0027](adr/0027-document-acl-canonical-keys.md)).
 - **An access change during ingestion can leave later batches with the old keys.** Narrowing

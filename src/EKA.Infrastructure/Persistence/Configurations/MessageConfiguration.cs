@@ -59,6 +59,12 @@ internal sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
                 .HasColumnName("SimilarityScore")
                 .IsRequired();
 
+            // The [n] marker in the answer text (Step 10). A column, because row order in
+            // this table is not promised to survive a round trip.
+            citation.Property(reference => reference.Number)
+                .HasColumnName("Number")
+                .IsRequired();
+
             citation.Property(reference => reference.SectionPath).HasMaxLength(1024);
 
             citation.OwnsOne(reference => reference.PageRange, page =>

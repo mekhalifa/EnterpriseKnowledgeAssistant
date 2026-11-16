@@ -4,9 +4,11 @@ using EKA.Application.Conversations.AskQuestion;
 using EKA.Application.Conversations.GetConversation;
 using EKA.Application.Conversations.StartConversation;
 using EKA.Application.Identity;
+using EKA.Application.Retrieval;
 using EKA.Application.Tests.Fakes;
 using EKA.Domain.Conversations;
 using EKA.Domain.Prompting;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Shouldly;
 
@@ -21,24 +23,51 @@ public sealed class ConversationHandlerTests
     private readonly FakeUnitOfWork _unitOfWork = new();
     private readonly FixedTimeProvider _time = FixedTimeProvider.Default;
 
+    // Retrieval, real retriever over in-memory stores. Every question embeds as [1,0,0,0], so a
+    // chunk indexed with Same scores 1.0 and is always found; Far (cosine 0) is under the floor.
+    private static readonly float[] Same = [1, 0, 0, 0];
+    private readonly FakeVectorStore _vectors = new();
+    private readonly FakeChunkReader _chunks = new();
+    private readonly FixedQueryEmbedding _embeddings = new([1, 0, 0, 0]);
+
     private static readonly CallerIdentity Alice = new(TestData.Tenant, "alice", "alice@example.test", "Alice");
+
+    private const string GroundedTemplate = "Sources:\n{{context}}\n\nQuestion: {{question}}";
 
     public ConversationHandlerTests()
     {
         var template = new PromptTemplate(
-            Guid.NewGuid(), "default", 1, "Be careful.", "{{question}}", Guid.NewGuid(), FixedTimeProvider.DefaultNow);
+            Guid.NewGuid(), "default", 2, "Be careful.", GroundedTemplate, Guid.NewGuid(), FixedTimeProvider.DefaultNow);
         template.Activate(FixedTimeProvider.DefaultNow);
         _templates.Add(template);
+
+        // Alice's tenant has one tenant-wide policy, so ordinary questions find evidence.
+        Index(TestData.Completed(chunkTexts: "Employees receive 25 days of annual leave."));
+    }
+
+    private Domain.Ingestion.Document Index(Domain.Ingestion.Document document, float[]? vector = null)
+    {
+        _chunks.With(document);
+        foreach (var chunk in document.Chunks)
+        {
+            _vectors.Seed(new Abstractions.Ingestion.ChunkVector(
+                document.TenantId, document.Id, chunk.Index, vector ?? Same, _embeddings.Model, chunk.PageRange, chunk.SectionPath, document.AccessKeys));
+        }
+
+        return document;
     }
 
     private UserProvisioner Provisioner() => new(_users, _unitOfWork, _time);
 
     private StartConversationHandler Start() => new(Provisioner(), _conversations, _unitOfWork, _time);
 
-    private AskQuestionHandler Ask(int maxPromptTokens = 6000) => new(
-        Provisioner(), _conversations, _templates, _chat,
+    private ChunkRetriever Retriever() =>
+        new(_embeddings, _vectors, _chunks, Options.Create(new RetrievalOptions()), NullLogger<ChunkRetriever>.Instance);
+
+    private AskQuestionHandler Ask(int maxPromptTokens = 6000, int maxContextTokens = 3000) => new(
+        Provisioner(), _conversations, _templates, Retriever(), _chat,
         new PromptBuilder(new EstimatingTokenCounter()), _unitOfWork,
-        Options.Create(new ChatOptions { MaxPromptTokens = maxPromptTokens }), _time);
+        Options.Create(new ChatOptions { MaxPromptTokens = maxPromptTokens, MaxContextTokens = maxContextTokens }), _time);
 
     private async Task<Guid> StartedConversation(CallerIdentity? caller = null) =>
         (await Start().HandleAsync(new StartConversationCommand(caller ?? Alice))).Value.Id;
@@ -126,7 +155,7 @@ public sealed class ConversationHandlerTests
         result.Value.Answer.TokenCount.ShouldBe(7);
         result.Value.Answer.Model.ShouldBe("fake-model");
         result.Value.PromptTokens.ShouldBe(50);
-        result.Value.PromptTemplateVersion.ShouldBe(1);
+        result.Value.PromptTemplateVersion.ShouldBe(2);
     }
 
     [Fact]
@@ -151,13 +180,11 @@ public sealed class ConversationHandlerTests
 
         await Ask().HandleAsync(new AskQuestionCommand(Alice, conversationId, "second"));
 
-        _chat.Prompts[^1].Select(t => (t.Role, t.Content)).ShouldBe(
-        [
-            (MessageRole.System, "Be careful."),
-            (MessageRole.User, "first"),
-            (MessageRole.Assistant, "An answer."),
-            (MessageRole.User, "second"),
-        ]);
+        var prompt = _chat.Prompts[^1];
+        prompt.Select(t => t.Role).ShouldBe([MessageRole.System, MessageRole.User, MessageRole.Assistant, MessageRole.User]);
+        prompt[1].Content.ShouldBe("first");          // history is the question as asked,
+        prompt[2].Content.ShouldBe("An answer.");     // not the sources it came with
+        prompt[3].Content.ShouldEndWith("Question: second");
     }
 
     [Fact]
@@ -182,5 +209,161 @@ public sealed class ConversationHandlerTests
 
         result.Error.Code.ShouldBe("conversation.question_too_long");
         _chat.Prompts.ShouldBeEmpty();
+    }
+
+    // ── Grounding (Step 10) ─────────────────────────────────────────────────────────
+
+    private async Task<Contracts.Conversations.AskQuestionResponse> AskAsync(string question, CallerIdentity? caller = null)
+    {
+        var conversationId = await StartedConversation(caller);
+        var result = await Ask().HandleAsync(new AskQuestionCommand(caller ?? Alice, conversationId, question));
+        result.IsSuccess.ShouldBeTrue(result.ToString());
+        return result.Value;
+    }
+
+    [Fact]
+    public async Task The_sources_reach_the_question_turn_numbered_and_never_the_system_turn()
+    {
+        await AskAsync("How many days of leave?");
+
+        var prompt = _chat.Prompts.Single();
+        prompt[0].Content.ShouldBe("Be careful.");
+        prompt[^1].Content.ShouldContain("<source id=\"1\" title=\"Employee handbook\" section=\"Leave\">");
+        prompt[^1].Content.ShouldContain("Employees receive 25 days of annual leave.");
+        prompt[^1].Content.ShouldEndWith("Question: How many days of leave?");
+    }
+
+    [Fact]
+    public async Task An_answer_citing_its_source_is_stored_with_that_citation()
+    {
+        _chat.Answer = "You get 25 days [1].";
+
+        var response = await AskAsync("How many days of leave?");
+
+        response.Grounding.ShouldBe("cited");
+        response.Answer.Content.ShouldBe("You get 25 days [1].");
+        var citation = response.Answer.Citations.ShouldHaveSingleItem();
+        citation.Number.ShouldBe(1);
+        citation.DocumentTitle.ShouldBe("Employee handbook");
+        citation.SectionPath.ShouldBe("Leave");
+        citation.Score.ShouldBe(1.0);
+
+        var stored = _conversations.All.Single().Messages.Last();
+        stored.IsUngrounded.ShouldBeFalse();
+        stored.Citations.ShouldHaveSingleItem().Number.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Citations_are_renumbered_by_first_appearance_and_invented_ones_dropped()
+    {
+        Index(TestData.Completed(chunkTexts: "Sick leave needs a certificate."));
+        Index(TestData.Completed(chunkTexts: "Carry-over is five days."));
+        _chat.Answer = "Carry-over is five days [3]. Annual leave is 25 days [1, 9]. See also [7].";
+
+        var response = await AskAsync("Leave rules?");
+
+        response.Answer.Content.ShouldBe("Carry-over is five days [1]. Annual leave is 25 days [2]. See also.");
+        response.Answer.Citations.Select(c => c.Number).ShouldBe([1, 2]);
+        response.SourcesProvided.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task With_no_relevant_source_the_system_refuses_without_calling_the_model()
+    {
+        var response = await AskAsync("What is the capital of Australia?", Alice with { TenantId = TestData.OtherTenant });
+
+        response.Grounding.ShouldBe("no_evidence");
+        response.Answer.Model.ShouldBe(Message.NoEvidenceModel);
+        response.Answer.Content.ShouldBe(new ChatOptions().NoEvidenceAnswer);
+        response.Answer.Citations.ShouldBeEmpty();
+        response.PromptTokens.ShouldBeNull();
+        _chat.Prompts.ShouldBeEmpty();
+
+        // The exchange is still recorded: the question was asked and answered.
+        _conversations.All.Single().Messages.Last().IsNoEvidenceRefusal.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_restricted_document_never_reaches_a_non_members_prompt()
+    {
+        // The only document in this tenant about salaries is HR-only. Bob is not in HR.
+        var otherTenant = TestData.OtherTenant;
+        Index(TestData.Completed(otherTenant, Domain.Access.DocumentAccess.Of([Domain.Access.AccessPrincipal.Group("hr")]), chunkTexts: "Salary band C is 60k."));
+        var bob = new CallerIdentity(otherTenant, "bob", "bob@example.test", "Bob");
+        var carol = new CallerIdentity(otherTenant, "carol", "carol@example.test", "Carol", ["hr"]);
+
+        (await AskAsync("What is band C?", bob)).Grounding.ShouldBe("no_evidence");
+        _chat.Prompts.ShouldBeEmpty();
+
+        await AskAsync("What is band C?", carol);
+        _chat.Prompts.Single()[^1].Content.ShouldContain("Salary band C is 60k.");
+    }
+
+    [Fact]
+    public async Task A_model_that_cites_nothing_is_stored_as_an_ungrounded_answer()
+    {
+        _chat.Answer = "The available documents do not cover parking.";
+
+        var response = await AskAsync("Where do I park?");
+
+        response.Grounding.ShouldBe("uncited");
+        response.Answer.Citations.ShouldBeEmpty();
+        _conversations.All.Single().Messages.Last().IsUngrounded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Earlier_answers_lose_their_markers_before_they_are_replayed_as_history()
+    {
+        _chat.Answer = "You get 25 days [1].";
+        var conversationId = await StartedConversation();
+        await Ask().HandleAsync(new AskQuestionCommand(Alice, conversationId, "first"));
+
+        await Ask().HandleAsync(new AskQuestionCommand(Alice, conversationId, "second"));
+
+        // "[1]" referred to the first turn's source 1, not to this turn's.
+        _chat.Prompts[^1][2].Content.ShouldBe("You get 25 days.");
+        _conversations.All.Single().Messages.ElementAt(1).Content.ShouldBe("You get 25 days [1].");
+    }
+
+    [Fact]
+    public async Task A_retrieval_failure_is_reported_and_nothing_is_persisted()
+    {
+        var conversationId = await StartedConversation();
+        var savesBefore = _unitOfWork.SaveCount;
+        _embeddings.FailWith = AiErrors.Timeout;
+
+        var result = await Ask().HandleAsync(new AskQuestionCommand(Alice, conversationId, "leave?"));
+
+        result.Error.ShouldBe(AiErrors.Timeout);
+        _conversations.All.Single().Messages.ShouldBeEmpty();
+        _unitOfWork.SaveCount.ShouldBe(savesBefore);
+        _chat.Prompts.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Sources_that_do_not_fit_the_context_budget_are_left_out_whole_and_cannot_be_cited()
+    {
+        Index(TestData.Completed(chunkTexts: new string('x', 4000)));
+        _chat.Answer = "Twenty-five days [1]. Also [2].";
+        var conversationId = await StartedConversation();
+
+        var result = await Ask(maxContextTokens: 200).HandleAsync(new AskQuestionCommand(Alice, conversationId, "leave?"));
+
+        result.Value.SourcesRetrieved.ShouldBe(2);
+        result.Value.SourcesProvided.ShouldBe(1);
+        result.Value.Answer.Citations.ShouldHaveSingleItem();
+        _chat.Prompts.Single()[^1].Content.ShouldNotContain("xxxx");
+    }
+
+    [Fact]
+    public void A_template_without_a_context_placeholder_is_refused_for_grounded_answers()
+    {
+        var ungrounded = new PromptTemplate(Guid.NewGuid(), "plain", 1, "s", "{{question}}", Guid.NewGuid(), FixedTimeProvider.DefaultNow);
+        var chunk = new RetrievedChunk(
+            new Abstractions.Retrieval.ChunkPassage(Guid.NewGuid(), "t", Domain.Ingestion.ChunkIndex.First, "c", null, null),
+            Domain.Retrieval.SimilarityScore.Exact);
+
+        Should.Throw<InvalidOperationException>(() => new PromptBuilder(new EstimatingTokenCounter())
+            .WithTemplate(ungrounded).WithQuestion("q").WithSources([chunk], 1000).WithBudget(6000, 20).Build());
     }
 }

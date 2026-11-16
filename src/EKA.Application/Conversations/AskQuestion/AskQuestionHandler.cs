@@ -2,16 +2,37 @@ using EKA.Application.Abstractions;
 using EKA.Application.Abstractions.AI;
 using EKA.Application.Common;
 using EKA.Application.Identity;
+using EKA.Application.Retrieval;
 using EKA.Contracts.Conversations;
 using EKA.Domain.Conversations;
+using EKA.Domain.Prompting;
 using Microsoft.Extensions.Options;
 
 namespace EKA.Application.Conversations.AskQuestion;
 
 /// <summary>
-/// Asks the model a question in the context of a conversation, and records the exchange.
+/// Answers a question from the documents the caller may read, with citations, in the
+/// context of a conversation, and records the exchange.
 /// </summary>
 /// <remarks>
+/// <para>
+/// <b>The flow since Step 10</b> (retrieval-augmented generation):
+/// </para>
+/// <list type="number">
+/// <item><description><b>Retrieve</b> with the caller's <c>AccessScope</c>, through the same
+/// <see cref="ChunkRetriever"/> as <c>POST /api/search</c>. A document the caller cannot search
+/// can never reach their prompt.</description></item>
+/// <item><description><b>Build</b> the prompt: numbered sources within their own budget, then
+/// history.</description></item>
+/// <item><description><b>No sources, no model.</b> If nothing relevant was found (or nothing
+/// fitted), the system answers with <see cref="ChatOptions.NoEvidenceAnswer"/>. That costs
+/// nothing and cannot be fabricated, because no model was asked (ADR-0029).</description></item>
+/// <item><description><b>Otherwise ask the model,</b> which is instructed to answer only from
+/// the sources, cite them as [n], and say so when they do not cover the question.</description></item>
+/// <item><description><b>Extract citations</b> from the markers the model wrote. Only sources
+/// it was given count, renumbered in order of appearance. An answer citing nothing is stored
+/// as ungrounded, which is what a model's own refusal looks like.</description></item>
+/// </list>
 /// <para>
 /// <b>A turn is atomic: question and answer are persisted together, or neither is.</b>
 /// The model is called <i>before</i> the aggregate is touched. If the provider fails, the
@@ -34,6 +55,7 @@ public sealed class AskQuestionHandler(
     UserProvisioner provisioner,
     IConversationRepository conversations,
     IPromptTemplateRepository templates,
+    ChunkRetriever retriever,
     IChatCompletionService chat,
     PromptBuilder promptBuilder,
     IUnitOfWork unitOfWork,
@@ -73,12 +95,33 @@ public sealed class AskQuestionHandler(
                 $"No active prompt template named '{_options.PromptTemplateName}'. "
                 + "Has the database been migrated?");
 
+        // Same reasoning: the migration seeds a grounded v2. An active template without
+        // {{context}} would answer from the model's training data, silently.
+        if (!template.SupportsGrounding)
+        {
+            throw new InvalidOperationException(
+                $"The active prompt template '{template.Name}' v{template.Version} has no "
+                + $"{PromptTemplate.ContextPlaceholder} placeholder and cannot produce grounded answers.");
+        }
+
         var askedAt = timeProvider.GetUtcNow();
+
+        var retrieved = await retriever
+            .RetrieveAsync(command.Caller.AccessScope, command.Question, cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (retrieved.IsFailure)
+        {
+            // The question was not embedded or not searched: a provider or search failure, not
+            // "no evidence". Nothing is persisted, as with a failed model call.
+            return retrieved.Error;
+        }
 
         var prompt = promptBuilder
             .WithTemplate(template)
             .WithHistory(conversation.Messages)
             .WithQuestion(command.Question)
+            .WithSources(retrieved.Value, _options.MaxContextTokens)
             .WithBudget(_options.MaxPromptTokens, _options.MaxHistoryMessages)
             .Build();
 
@@ -87,25 +130,44 @@ public sealed class AskQuestionHandler(
             return prompt.Error;
         }
 
-        var completion = await chat.CompleteAsync(prompt.Value.Turns, cancellationToken).ConfigureAwait(false);
-        if (completion.IsFailure)
+        var question = Message.FromUser(Guid.CreateVersion7(), conversation.Id, command.Question, askedAt);
+        Message answer;
+        string grounding;
+        int? promptTokens = null;
+
+        if (prompt.Value.Sources.Count == 0)
         {
-            // Nothing has been added to the aggregate, so there is nothing to undo.
-            return completion.Error;
+            answer = Message.NoEvidenceRefusal(Guid.CreateVersion7(), conversation.Id, _options.NoEvidenceAnswer, timeProvider.GetUtcNow());
+            grounding = GroundingNoEvidence;
+        }
+        else
+        {
+            var completion = await chat.CompleteAsync(prompt.Value.Turns, cancellationToken).ConfigureAwait(false);
+            if (completion.IsFailure)
+            {
+                // Nothing has been added to the aggregate, so there is nothing to undo.
+                return completion.Error;
+            }
+
+            var extracted = CitationMarkers.Extract(completion.Value.Content, prompt.Value.Sources);
+
+            answer = Message.FromAssistant(
+                Guid.CreateVersion7(),
+                conversation.Id,
+                // An answer that was nothing but invented markers would extract to nothing.
+                // Keep the model's words rather than fail the turn; it cites nothing either way.
+                string.IsNullOrWhiteSpace(extracted.Text) ? completion.Value.Content : extracted.Text,
+                completion.Value.Provider,
+                completion.Value.Model,
+                timeProvider.GetUtcNow(),
+                citations: extracted.Cited.Select(ToCitation),
+                tokenCount: completion.Value.OutputTokens);
+
+            grounding = extracted.Cited.Count > 0 ? GroundingCited : GroundingUncited;
+            promptTokens = completion.Value.InputTokens?.Value;
         }
 
-        var answeredAt = timeProvider.GetUtcNow();
-
-        var question = Message.FromUser(Guid.CreateVersion7(), conversation.Id, command.Question, askedAt);
-        var answer = Message.FromAssistant(
-            Guid.CreateVersion7(),
-            conversation.Id,
-            completion.Value.Content,
-            completion.Value.Provider,
-            completion.Value.Model,
-            answeredAt,
-            citations: null,
-            tokenCount: completion.Value.OutputTokens);
+        var answeredAt = answer.CreatedAt;
 
         // The aggregate enforces the ordering (an answer must follow a question) and
         // throws on an archived conversation. This handler does not pre-check either:
@@ -115,14 +177,33 @@ public sealed class AskQuestionHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
+        var modelCalled = grounding is not GroundingNoEvidence;
+
         return new AskQuestionResponse(
             conversation.Id,
             conversation.Title,
             question.ToResponse(),
             answer.ToResponse(),
-            completion.Value.InputTokens?.Value,
-            prompt.Value.HistoryMessagesIncluded,
-            prompt.Value.HistoryMessagesOmitted,
-            prompt.Value.TemplateVersion);
+            promptTokens,
+            modelCalled ? prompt.Value.HistoryMessagesIncluded : 0,
+            modelCalled ? prompt.Value.HistoryMessagesOmitted : 0,
+            prompt.Value.TemplateVersion,
+            grounding,
+            SourcesRetrieved: retrieved.Value.Count,
+            SourcesProvided: prompt.Value.Sources.Count);
     }
+
+    internal const string GroundingCited = "cited";
+    internal const string GroundingUncited = "uncited";
+    internal const string GroundingNoEvidence = "no_evidence";
+
+    private static Citation ToCitation(PromptSource source) =>
+        new(
+            source.Chunk.Passage.DocumentId,
+            source.Chunk.Passage.DocumentTitle,
+            source.Chunk.Passage.Index,
+            source.Chunk.Score,
+            source.Number,
+            source.Chunk.Passage.Pages,
+            source.Chunk.Passage.SectionPath);
 }

@@ -115,17 +115,51 @@ public sealed class Message : EntityAudit<Guid>
 
         if (citations is not null)
         {
-            // Deduplicate: retrieval regularly returns several chunks from the same
-            // document, and the reader does not want the same source listed five times.
+            // Deduplicate: the same chunk cited twice is one source, not two.
             var distinct = citations
                 .DistinctBy(c => (c.DocumentId, c.ChunkIndex.Value))
-                .OrderByDescending(c => c.Score);
+                .OrderBy(c => c.Number)
+                .ToList();
+
+            // Ordered by marker, not score (Step 10): the reader follows [1], [2] through the
+            // text, and the list beneath it should read in the same order. Two different
+            // sources sharing a marker would make "[2]" point at two places.
+            var clash = distinct.GroupBy(c => c.Number).FirstOrDefault(group => group.Count() > 1);
+            if (clash is not null)
+            {
+                throw new DomainException($"Two different sources share citation marker [{clash.Key}].");
+            }
 
             message._citations.AddRange(distinct);
         }
 
         return message;
     }
+
+    /// <summary>The provider name recorded on an answer the system wrote without a model.</summary>
+    public const string SystemProvider = "eka";
+
+    /// <summary>The "model" recorded on a no-evidence refusal: none was asked.</summary>
+    public const string NoEvidenceModel = "none:no-evidence";
+
+    /// <summary>
+    /// The answer given when retrieval found nothing the caller may read that is relevant
+    /// enough. Written by the system, without a model call (Step 10).
+    /// </summary>
+    /// <remarks>
+    /// Still an assistant message, so the conversation keeps its question-answer rhythm and
+    /// the next prompt's history reads naturally. It records <see cref="SystemProvider"/> and
+    /// <see cref="NoEvidenceModel"/> instead of pretending a model wrote it: "which model said
+    /// this?" has the true answer, none.
+    /// </remarks>
+    public static Message NoEvidenceRefusal(Guid id, Guid conversationId, string content, DateTimeOffset createdAt) =>
+        FromAssistant(id, conversationId, content, SystemProvider, NoEvidenceModel, createdAt);
+
+    /// <summary>True for an answer the system gave because no relevant document was found.</summary>
+    public bool IsNoEvidenceRefusal =>
+        Role is MessageRole.Assistant
+        && ProviderName == SystemProvider
+        && ModelName == NoEvidenceModel;
 
     public override string ToString() => $"{Role}: {Content[..Math.Min(60, Content.Length)]}";
 }

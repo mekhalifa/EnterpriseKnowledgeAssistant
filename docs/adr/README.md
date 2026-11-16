@@ -54,6 +54,7 @@ useful as the current belief.
 | [0026](0026-one-ingestion-job-resumable-stages.md) | One ingestion job per document, with stages that resume from the document's state | Accepted | 2026-11-16 |
 | [0027](0027-document-acl-canonical-keys.md) | Document access as canonical principal keys, filtered inside the vector query and re-checked in SQL | Accepted | 2026-11-16 |
 | [0028](0028-retrieval-contract.md) | The retrieval contract: dense-only, configured top-K and floor, over-fetch, empty as success | Accepted | 2026-11-16 |
+| [0029](0029-grounded-answers-refusal-and-citations.md) | Grounded answers: two-layer refusal, numbered citation markers, the raw question for retrieval | Accepted | 2026-11-16 |
 
 ## Template
 

@@ -436,6 +436,10 @@ namespace EKA.Infrastructure.Persistence.Migrations
                                 .HasMaxLength(500)
                                 .HasColumnType("nvarchar(500)");
 
+                            b1.Property<int>("Number")
+                                .HasColumnType("int")
+                                .HasColumnName("Number");
+
                             b1.Property<double>("Score")
                                 .HasColumnType("float")
                                 .HasColumnName("SimilarityScore");

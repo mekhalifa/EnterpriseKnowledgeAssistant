@@ -27,5 +27,17 @@ internal static class ConversationMapping
             message.Content,
             message.CreatedAt,
             message.TokenCount?.Value,
-            message.ModelName);
+            message.ModelName,
+            [.. message.Citations.OrderBy(citation => citation.Number).Select(ToResponse)]);
+
+    public static CitationResponse ToResponse(this Citation citation) =>
+        new(
+            citation.Number,
+            citation.DocumentId,
+            citation.DocumentTitle,
+            citation.ChunkIndex.Value,
+            citation.PageRange?.Start,
+            citation.PageRange?.End,
+            citation.SectionPath,
+            Math.Round(citation.Score.Value, 4));
 }

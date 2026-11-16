@@ -31,6 +31,26 @@ public sealed class ChatOptions
     /// conversation instead of the question.
     /// </summary>
     public int MaxHistoryMessages { get; set; } = 20;
+
+    /// <summary>
+    /// Upper bound on the sources section: the retrieved chunks the model is shown (Step 10).
+    /// 3,000 holds the default five chunks of about 500 tokens with room to spare. It is spent
+    /// before history, inside <see cref="MaxPromptTokens"/>.
+    /// </summary>
+    public int MaxContextTokens { get; set; } = 3000;
+
+    /// <summary>
+    /// The answer when retrieval finds nothing relevant that the caller may read. Given by the
+    /// system, without a model call.
+    /// </summary>
+    /// <remarks>
+    /// <b>The same words whether nothing exists or the caller may not see it.</b> "There is a
+    /// document but you lack access" would confirm that a restricted document covers the
+    /// question, which is exactly the kind of fact access control exists to protect.
+    /// </remarks>
+    public string NoEvidenceAnswer { get; set; } =
+        "I couldn't find anything in the documents available to you that answers this question. "
+        + "Try rephrasing it, or check with the team that owns the policy.";
 }
 
 internal sealed class ChatOptionsValidator : IValidateOptions<ChatOptions>
@@ -58,6 +78,18 @@ internal sealed class ChatOptionsValidator : IValidateOptions<ChatOptions>
         if (options.MaxHistoryMessages < 0)
         {
             failures.Add($"{section}:MaxHistoryMessages cannot be negative.");
+        }
+
+        // The sources live inside the prompt budget. A cap at or above it would let sources
+        // crowd out the instruction and question, and every grounded question would fail.
+        if (options.MaxContextTokens < 1 || options.MaxContextTokens >= options.MaxPromptTokens)
+        {
+            failures.Add($"{section}:MaxContextTokens must be at least 1 and below MaxPromptTokens ({options.MaxPromptTokens}); got {options.MaxContextTokens}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.NoEvidenceAnswer))
+        {
+            failures.Add($"{section}:NoEvidenceAnswer is required.");
         }
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);

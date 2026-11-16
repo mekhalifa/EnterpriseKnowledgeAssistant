@@ -25,7 +25,8 @@ Each step document records what we built, why, the best option, and the alternat
 | 7 | [step-07-document-ingestion.md](steps/step-07-document-ingestion.md) | ✅ Complete |
 | 8 | [step-08-chunking-embeddings.md](steps/step-08-chunking-embeddings.md) | ✅ Complete |
 | 9 | [step-09-retrieval-acl.md](steps/step-09-retrieval-acl.md) | ✅ Complete |
-| 10–14 | *created as we reach them* | — |
+| 10 | [step-10-grounded-answers.md](steps/step-10-grounded-answers.md) | ✅ Complete |
+| 11–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -61,6 +62,7 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0026](adr/0026-one-ingestion-job-resumable-stages.md) | One ingestion job with resumable stages | Accepted |
 | [0027](adr/0027-document-acl-canonical-keys.md) | Document access as canonical keys, filtered in the query, re-checked in SQL | Accepted |
 | [0028](adr/0028-retrieval-contract.md) | Retrieval contract: dense-only, configured K and floor, empty is success | Accepted |
+| [0029](adr/0029-grounded-answers-refusal-and-citations.md) | Grounded answers: two-layer refusal, numbered citations | Accepted |
 
 ## Project skills
 
