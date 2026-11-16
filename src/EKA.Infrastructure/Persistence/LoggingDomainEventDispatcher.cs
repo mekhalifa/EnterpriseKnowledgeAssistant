@@ -42,8 +42,7 @@ public sealed class LoggingDomainEventDispatcher : IDomainEventDispatcher
         foreach (var domainEvent in domainEvents)
         {
             _logger.LogInformation(
-                "Domain event {DomainEvent} occurred at {OccurredAt}. No handler is "
-                + "registered yet; handlers arrive in Step 7.",
+                "Domain event {DomainEvent} occurred at {OccurredAt}. No handler is registered yet.",
                 domainEvent.GetType().Name,
                 domainEvent.OccurredAt);
         }

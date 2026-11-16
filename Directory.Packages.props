@@ -124,6 +124,13 @@
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
   </ItemGroup>
 
+  <ItemGroup Label="Vector store">
+    <!-- Qdrant's official gRPC client (ADR-0025), Apache-2.0. Kept on the same minor as the
+         server image in deploy/docker-compose.yml and the test fixture: the client speaks the
+         server's protobuf API, and Qdrant supports a client one minor away at most. -->
+    <PackageVersion Include="Qdrant.Client" Version="1.20.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Persistence">
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="$(MicrosoftRuntimeVersion)" />
     <!-- Design is tooling only: PrivateAssets="all" keeps it out of published output. -->
@@ -142,6 +149,7 @@
          sqlite/in-memory stand-in that would not catch the index and constraint
          behaviour this step depends on. -->
     <PackageVersion Include="Testcontainers.MsSql" Version="4.16.0" />
+    <PackageVersion Include="Testcontainers.Qdrant" Version="4.16.0" />
     <!-- WebApplicationFactory: boots the real Program.cs in-process, so endpoint tests
          exercise the actual middleware pipeline rather than a hand-assembled imitation. -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="$(MicrosoftRuntimeVersion)" />

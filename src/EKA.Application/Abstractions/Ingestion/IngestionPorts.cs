@@ -51,9 +51,13 @@ public interface IFileStorage
 /// </remarks>
 public interface IIngestionQueue
 {
+    /// <summary>
+    /// Queues the whole pipeline for one document: extraction, chunking, embedding. Named
+    /// <c>EnqueueExtractionAsync</c> until Step 8, when one job began running every stage.
+    /// </summary>
     /// <returns><c>true</c> if the job was durably queued; <c>false</c> if the hand-off failed
     /// and the sweep will have to recover it.</returns>
-    Task<bool> EnqueueExtractionAsync(TenantId tenantId, Guid documentId, CancellationToken cancellationToken = default);
+    Task<bool> EnqueueIngestionAsync(TenantId tenantId, Guid documentId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

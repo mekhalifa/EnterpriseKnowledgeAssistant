@@ -49,7 +49,7 @@ public sealed class RecoverStalledDocumentsHandler(
         var requeued = 0;
         foreach (var document in stalled)
         {
-            if (await queue.EnqueueExtractionAsync(document.TenantId, document.Id, cancellationToken).ConfigureAwait(false))
+            if (await queue.EnqueueIngestionAsync(document.TenantId, document.Id, cancellationToken).ConfigureAwait(false))
             {
                 requeued++;
             }

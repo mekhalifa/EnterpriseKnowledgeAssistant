@@ -2,44 +2,41 @@
 
 Single source of truth for project state. Updated at the end of every working session.
 
-**Last updated:** 2026-11-15
-**Current step:** Step 7 complete → Step 8 next
-**Overall:** Phase B, 7 of 14 steps done
-**Branch:** `step-07-document-ingestion` (branched from `step-06-chat-api`; none merged to `main`)
+**Last updated:** 2026-11-16
+**Current step:** Step 8 complete → Step 9 next
+**Overall:** Phase B complete, 8 of 14 steps done
+**Branch:** `step-08-chunking-embeddings` (branched from `step-07-document-ingestion`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**Step 8 — Chunking and embeddings.**
-Exit criterion: *an ingested document yields ordered chunks and matching vectors;
-re-ingesting the same document is safe.*
+**Step 9 — Vector retrieval with ACL filtering.**
+Exit criterion: *queries return relevant chunks and never content outside the caller's
+access scope.*
 
 **Decisions needed first:**
 
 | Decision | Options |
 |---|---|
-| Chunking strategy | Token-window with overlap (recommended start: ~500 tokens, ~15% overlap) vs section-aware (split on the artifact's sections, then window) vs semantic |
-| Qdrant point identity | Point id = `DocumentChunk.Id` (idempotent upsert) vs derived from `(DocumentId, ChunkIndex)` |
-| Worker AI key | The worker now needs `AddAi`, hence its own `Ai:ApiKey` in its User Secrets |
+| ACL model | Tenant-only for now vs a `DocumentAcl` (users/groups per document) carried into the Qdrant payload and re-checked in SQL |
+| Hybrid search | Dense-only first (recommended), BM25/sparse only if Step 11 shows a gap |
+| Retrieval contract | Top-K and score threshold as configuration vs per request; what a "no evidence" result looks like to Step 10 |
 
 Then:
 
-1. Chunking stage after extraction: read `ExtractedTextStore`, chunk (Strategy pattern),
-   `Document.AddChunks` → Embedding. Page and section metadata carried onto each chunk.
-2. Batched embedding through `IEmbeddingService` with bounded concurrency (backpressure);
-   one failure must not lose the batch's progress.
-3. Qdrant in `deploy/docker-compose.yml`; collection created at 1536 dims, cosine; payload
-   carries **tenant id and document id** so Step 9 can filter before content is returned.
-4. `CompleteIngestion` only after every vector is written; re-ingestion deletes old points
-   first (or upserts by stable id) so a retry never leaves duplicates.
-5. Delete completes: removing a document removes its vectors (the third store, after the
-   row and the files).
-6. Load → change → save tests for every new aggregate operation; a real-Qdrant integration
-   test via Testcontainers.
+1. A retrieval port and use case: embed the question (`IEmbeddingService`, same model and
+   `EmbeddingInput` conventions), search Qdrant with the tenant filter **inside the query**.
+2. Resolve hits against SQL Server by `(DocumentId, ChunkIndex)`: only `Completed` documents,
+   same tenant re-checked (ADR-0025). Orphan points must never surface.
+3. Score threshold and top-K; deterministic ordering for ties.
+4. Specification pattern for filters, so Step 12's access rules compose rather than branch.
+5. Tests: a two-tenant suite proving no cross-tenant hit even with identical text; a document
+   mid-re-ingestion is not returned; real-Qdrant integration tests.
 
-Reference: [concepts/design-patterns.md](concepts/design-patterns.md) (Strategy),
-[adr/0023](adr/0023-extracted-text-artifact.md), [adr/0015](adr/0015-openai-compatible-provider.md).
+Reference: [adr/0024](adr/0024-section-aware-chunking-deterministic-point-ids.md),
+[adr/0025](adr/0025-qdrant-official-client-single-collection.md),
+[concepts/design-patterns.md](concepts/design-patterns.md) (Specification).
 
 ---
 
@@ -256,6 +253,44 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 5. Test fixtures shared one content hash; persistence tests now assert `DuplicateKeyException`
    and the index name.
 
+### Session 4 — 2026-11-16
+
+#### Step 8 — Chunking and embeddings ✅
+
+- **Exit criterion met twice:** in-process (real API + worker composition + real Qdrant,
+  embedding faked) and on the real stack with **real OpenRouter embeddings**: a 6 KB handbook
+  went Pending → Completed in 5 s, 7 chunks (≈470-token windows starting at clause
+  boundaries), 7 points at 1536 dims, cosine; `DELETE` emptied Qdrant and storage.
+- `SectionAwareChunker` behind `IChunkingStrategy` (Strategy): sections are hard
+  boundaries, small same-heading neighbours merge (page ranges), long sections window at
+  paragraph → sentence → word with whole-unit overlap; never over the token target.
+- Embedding input = title + heading trail + chunk; stored chunk stays plain text.
+- `IndexDocumentHandler`: delete old vectors → chunks → waves of bounded batches (64 × 2 in
+  flight) → record per wave → `CompleteIngestion`. Refusals fail the document; everything
+  else retries with progress kept.
+- Domain: `AwaitsChunking`, `AwaitsEmbedding`, `ChunksAwaitingEmbedding`,
+  `RecordEmbeddings`; `CompleteIngestion` now refuses unless every loaded chunk has a vector.
+- `QdrantVectorStore`: derived UUIDv8 point ids from (document, index); one collection,
+  `tenant_id` (is_tenant) + `document_id` indexes; no text in payload; collection created on
+  first write and refused on a dimension mismatch.
+- One job `IngestAsync` for all stages; `ExtractTextAsync` kept as a forwarder for stored
+  jobs. Reset now enqueues. Delete reaches all three stores (best-effort clean-up after the
+  row commits).
+- Qdrant in compose (v1.20.0, loopback-only) and in the test fixture. No migration needed.
+- **477 tests** (+13 domain, +29 application, +6 integration).
+- Decided: [ADR-0024](adr/0024-section-aware-chunking-deterministic-point-ids.md) chunking +
+  point ids; [ADR-0025](adr/0025-qdrant-official-client-single-collection.md) Qdrant layout;
+  [ADR-0026](adr/0026-one-ingestion-job-resumable-stages.md) one resumable job.
+
+**Found and fixed, all recorded in [step-08](steps/step-08-chunking-embeddings.md):**
+
+1. **A computed property became a relationship.** `ChunksAwaitingEmbedding`
+   (`IReadOnlyList<DocumentChunk>`, getter only) was mapped by convention as a second
+   navigation; `MigrateAsync` refused with `PendingModelChangesWarning`. Ignored explicitly.
+2. **The chunk budget leaked separators.** Per-piece token sums ignored the spaces and breaks
+   between pieces; a "50-token" piece was 63. Pieces are now counted with their separator.
+3. A stale "handlers arrive in Step 7" log message.
+
 ---
 
 ## Step checklist
@@ -269,8 +304,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | 5 | AI providers via Microsoft.Extensions.AI | ✅ Complete — 362 tests |
 | 6 | Prompt templates + chat API | ✅ Complete — 394 tests |
 | 7 | Document ingestion | ✅ Complete — 429 tests |
-| 8 | Chunking + embeddings | ⬜ Next |
-| 9 | Vector retrieval with ACL filtering | ⬜ Not started |
+| 8 | Chunking + embeddings | ✅ Complete — 477 tests |
+| 9 | Vector retrieval with ACL filtering | ⬜ Next |
 | 10 | RAG answer generation with citations | ⬜ Not started |
 | 11 | Evaluation | ⬜ Not started |
 | 12 | Security and enterprise controls | ⬜ Not started |
@@ -283,11 +318,10 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 
 | When | Decision | Options |
 |---|---|---|
-| Step 8 | **Chunking strategy** — blocking | Token window + overlap vs section-aware vs semantic; see the next-action block |
-| Step 8 | **Qdrant point identity** — blocking | Chunk id vs derived from (DocumentId, ChunkIndex); decides how re-ingestion avoids duplicates |
 | Before real documents | **Data processor approval** | OpenRouter sees prompts and retrieved text ([ADR-0015](adr/0015-openai-compatible-provider.md)). Fine for learning data; decide before anything sensitive is ingested |
 | Step 9 | Hybrid search | Dense-only first; add BM25 only if Step 11 shows a gap |
-| Step 9 | ACL model | `DocumentAcl` deliberately not built — designed with access-filtered retrieval |
+| Step 9 | **ACL model** — blocking | `DocumentAcl` deliberately not built — designed with access-filtered retrieval; see the next-action block |
+| Step 11 | Chunk size and algorithm | 500/75 section-aware is a starting point; compare against semantic or parent/child with evidence ([ADR-0024](adr/0024-section-aware-chunking-deterministic-point-ids.md)) |
 | Step 11 | Persist the prompt template version on each answer | Reported in `AskQuestionResponse` today, not stored; evaluation will need it ([ADR-0019](adr/0019-prompt-templates-seeded-by-migration.md)) |
 | Step 12 | Identity provider | Entra ID vs Keycloak vs ASP.NET Core Identity |
 | Step 12 | EF global query filters | As *defence in depth* on top of explicit tenant parameters, not instead of them — see ADR-0009 |
@@ -302,7 +336,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | Risk | Why it matters | Mitigation |
 |---|---|---|
 | ACL leak through retrieval | The worst failure mode — one user reading another's documents | Tenant filter inside every repository method (ADR-0009); **proved across HTTP in Step 4** by two-tenant end-to-end tests; vector-query filtering in Step 9; security tests in Step 12 |
-| Embedding dimension change | Forces a full re-index | Recorded per provider and per chunk, so stale vectors are identifiable |
+| Embedding dimension change | Forces a full re-index | Model recorded per chunk; the adapter refuses vectors of another size for an existing collection (Step 8). Re-index = new collection name + re-ingest |
+| Cross-tenant vector query | Qdrant isolation is a payload filter, not a boundary | Every port method takes the tenant; deletes/counts filter tenant **and** document (tested); Step 9 re-checks hits in SQL |
 | Prompt injection via document content | Uploaded documents are untrusted input | `MessageRole` is a trust boundary; tested in Step 10 |
 | Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer, client errors never retried (Step 5, tested); token budgets, caching, rate limits in Step 12 |
 | Third-party data path | OpenRouter sits between us and the model vendor | Learning data only until the decision above is made; switching to OpenAI direct or Azure is configuration (ADR-0015) |
@@ -321,6 +356,7 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | `default(TenantId)` must never persist | `IsEmpty` check in every aggregate constructor + non-nullable column | ✅ Both halves done |
 | Same bytes registered once per tenant | `UX_Documents_TenantId_ContentHash` + lookup in `UploadDocumentHandler` | ✅ Both halves; race proved closed by 8 concurrent uploads (Step 7) |
 | One local user per identity per tenant | `UX_Users_TenantId_ExternalId` | ✅ Created and tested (Step 6; replaced the global index) |
+| One vector per chunk, however often written | Point id derived from (DocumentId, ChunkIndex) in `QdrantVectorStore` | ✅ Tested against real Qdrant (Step 8) |
 
 ---
 
@@ -334,12 +370,20 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 - **`appsettings.Development.json` ships with the scheme enabled**, so a developer who
   renames their environment hits the startup throw. That is the designed behaviour, but it
   is a surprise worth knowing about in advance.
-- **Deleting a document removes the row and its files, not yet its vectors** (Step 8).
-- **Exhausted retries leave a document `Extracting`.** After five transient failures the job
-  sits in Hangfire's Failed list; the sweep only re-enqueues `Pending`. Needs a terminal
-  handler that marks the document Failed.
-- **Orphaned files accumulate after crashes** between the file write and the row insert. No
-  reconciliation job yet.
+- **Exhausted retries leave a document in an intermediate status** (`Extracting`, `Chunking`
+  or `Embedding`). After five transient failures the job sits in Hangfire's Failed list; the
+  sweep only re-enqueues `Pending`. Needs a terminal handler that marks the document Failed,
+  or a sweep over stalled intermediate statuses (ADR-0026).
+- **Orphaned files and vectors accumulate after crashes** or a store outage during delete.
+  Harmless to readers (no text in the payload, hits resolve against SQL), but no
+  reconciliation job reclaims them yet.
+- **The worker needs its own AI key.** `dotnet user-secrets --project src/EKA.Ingestion.Worker
+  set "Ai:ApiKey" "<key>"`; without it the worker refuses to start (by design).
+- **A failed document keeps its chunk rows** (and their partial embedded marks) until reset.
+  Its vectors are deleted on failure, so nothing is searchable.
+- **No embedding cache.** Re-ingesting a document re-embeds every chunk, even unchanged ones.
+- **No Qdrant API key locally**; ports are loopback-only. Any shared deployment must set
+  `VectorStore:ApiKey`.
 - **No concurrency token on `Document`.** Two simultaneous deliveries both extract and both
   save (same result — correct, wasteful).
 - **No OCR and no layout analysis.** Scanned PDFs fail clearly; multi-column pages may

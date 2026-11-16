@@ -115,10 +115,13 @@ dotnet test --filter Category!=Smoke   # everything else; needs no key
 # Ingestion worker (Step 7). Same connection string as the API, in its OWN user secrets.
 # Both processes share file storage: %LOCALAPPDATA%/EKA/files unless Storage:RootPath is set.
 dotnet user-secrets --project src/EKA.Ingestion.Worker set "ConnectionStrings:EkaDatabase" "<connection string>"
+# Since Step 8 the worker embeds chunks, so it needs its own AI key too (it refuses to start without one).
+dotnet user-secrets --project src/EKA.Ingestion.Worker set "Ai:ApiKey" "<key>"
 dotnet run --project src/EKA.Ingestion.Worker
 # Local connection strings: use 127.0.0.1, not localhost (the SQL container binds IPv4 only).
 
-# Local SQL Server. Requires deploy/.env (copy deploy/.env.example first).
+# Local SQL Server and Qdrant (Step 8). Requires deploy/.env (copy deploy/.env.example first).
+# Qdrant dashboard: http://127.0.0.1:6333/dashboard. The app uses gRPC on 6334.
 docker compose -f deploy/docker-compose.yml up -d
 docker compose -f deploy/docker-compose.yml down       # add -v to drop the data volume
 

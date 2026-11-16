@@ -6,11 +6,13 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Testcontainers.MsSql;
+using Testcontainers.Qdrant;
 
 namespace EKA.IntegrationTests;
 
 /// <summary>
-/// A real SQL Server in a throwaway container, shared by every test in the collection.
+/// A real SQL Server, and since Step 8 a real Qdrant, in throwaway containers shared by every
+/// test in the collection.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -39,11 +41,24 @@ public sealed class SqlServerFixture : IAsyncLifetime
     // drifting image versions; passing the tag is now required rather than optional.
     private readonly MsSqlContainer _container = new MsSqlBuilder(SqlServerImage).Build();
 
+    /// <summary>
+    /// The Qdrant server, pinned to the minor the client package targets and the compose file
+    /// runs (ADR-0025). Started alongside SQL Server since Step 8, because the API deletes
+    /// vectors with documents and the worker writes them, so every API-level test needs one.
+    /// </summary>
+    private const string QdrantImage = "qdrant/qdrant:v1.20.0";
+
+    private readonly QdrantContainer _qdrant = new QdrantBuilder(QdrantImage).Build();
+
     public string ConnectionString => _container.GetConnectionString();
+
+    /// <summary>Qdrant's gRPC endpoint, the one the client speaks.</summary>
+    public Uri QdrantEndpoint => new(_qdrant.GetGrpcConnectionString());
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        // In parallel: they are independent, and SQL Server alone takes tens of seconds.
+        await Task.WhenAll(_container.StartAsync(), _qdrant.StartAsync());
 
         // Apply migrations once for the shared database. Tests that specifically verify a
         // clean-database migration create their own database instead.
@@ -51,7 +66,11 @@ public sealed class SqlServerFixture : IAsyncLifetime
         await context.Database.MigrateAsync();
     }
 
-    public Task DisposeAsync() => _container.DisposeAsync().AsTask();
+    public async Task DisposeAsync()
+    {
+        await _qdrant.DisposeAsync();
+        await _container.DisposeAsync();
+    }
 
     /// <summary>
     /// Builds a context against the shared database, wired exactly as production is:

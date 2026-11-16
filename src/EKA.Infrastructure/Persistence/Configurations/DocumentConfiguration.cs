@@ -103,6 +103,12 @@ internal sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
         builder.Navigation(document => document.Chunks)
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
+        // A computed view of Chunks (Step 8), not a relationship. EF Core's conventions map a
+        // read-only collection property of an entity type as a navigation, so without this the
+        // model grows a second, nonsensical Document→DocumentChunk relationship, and the
+        // migrations check reports pending model changes.
+        builder.Ignore(document => document.ChunksAwaitingEmbedding);
+
         // The ingestion worker polls for pending work; tenant plus status covers both that
         // query and the per-tenant document list.
         builder.HasIndex(document => new { document.TenantId, document.Status })

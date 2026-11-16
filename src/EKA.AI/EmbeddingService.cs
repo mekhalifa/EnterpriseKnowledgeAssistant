@@ -20,6 +20,8 @@ internal sealed partial class EmbeddingService(
 
     public int Dimensions => _dimensions;
 
+    public string Model { get; } = options.Value.EmbeddingModel;
+
     public async Task<Result<EmbeddingBatch>> EmbedAsync(
         IReadOnlyList<string> inputs,
         CancellationToken cancellationToken = default)

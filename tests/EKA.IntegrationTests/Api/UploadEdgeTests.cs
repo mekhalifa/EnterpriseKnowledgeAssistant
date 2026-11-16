@@ -28,7 +28,8 @@ public sealed class UploadEdgeTests : IAsyncLifetime
     {
         _factory = new EkaApiFactory(
             _sqlServer.ConnectionString,
-            new Dictionary<string, string?> { ["Ingestion:MaxUploadBytes"] = MaxUploadBytes.ToString(System.Globalization.CultureInfo.InvariantCulture) });
+            new Dictionary<string, string?> { ["Ingestion:MaxUploadBytes"] = MaxUploadBytes.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+            _sqlServer.QdrantEndpoint);
         return Task.CompletedTask;
     }
 

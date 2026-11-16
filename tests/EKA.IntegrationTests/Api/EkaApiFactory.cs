@@ -35,7 +35,8 @@ namespace EKA.IntegrationTests.Api;
 /// </remarks>
 internal sealed class EkaApiFactory(
     string connectionString,
-    IReadOnlyDictionary<string, string?>? settings = null) : WebApplicationFactory<Program>
+    IReadOnlyDictionary<string, string?>? settings = null,
+    Uri? vectorStore = null) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -65,6 +66,13 @@ internal sealed class EkaApiFactory(
         // A throwaway folder per factory. The default (%LOCALAPPDATA%/EKA/files) is the
         // developer's real storage, and a test suite must never write there.
         builder.UseSetting("Storage:RootPath", StorageRoot);
+
+        // The fixture's Qdrant. Without one, deletes still succeed (vector clean-up is best
+        // effort) and only log a warning, which is what the health tests' broken factory sees.
+        if (vectorStore is not null)
+        {
+            builder.UseSetting("VectorStore:Endpoint", vectorStore.ToString());
+        }
 
         foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
         {

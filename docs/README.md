@@ -23,7 +23,8 @@ Each step document records what we built, why, the best option, and the alternat
 | 5 | [step-05-ai-providers.md](steps/step-05-ai-providers.md) | ✅ Complete |
 | 6 | [step-06-chat-api.md](steps/step-06-chat-api.md) | ✅ Complete |
 | 7 | [step-07-document-ingestion.md](steps/step-07-document-ingestion.md) | ✅ Complete |
-| 8–14 | *created as we reach them* | — |
+| 8 | [step-08-chunking-embeddings.md](steps/step-08-chunking-embeddings.md) | ✅ Complete |
+| 9–14 | *created as we reach them* | — |
 
 ## ADRs — the decisions
 
@@ -54,6 +55,9 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0021](adr/0021-file-storage-port-local-disk.md) | File storage port, local disk first | Accepted |
 | [0022](adr/0022-pure-dotnet-text-extraction.md) | Pure .NET text extraction, detection from content | Accepted |
 | [0023](adr/0023-extracted-text-artifact.md) | Extracted text as a versioned JSON artifact | Accepted |
+| [0024](adr/0024-section-aware-chunking-deterministic-point-ids.md) | Section-aware chunking, derived vector ids | Accepted |
+| [0025](adr/0025-qdrant-official-client-single-collection.md) | Qdrant: official client, one collection, no text in payload | Accepted |
+| [0026](adr/0026-one-ingestion-job-resumable-stages.md) | One ingestion job with resumable stages | Accepted |
 
 ## Project skills
 

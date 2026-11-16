@@ -137,6 +137,7 @@ public sealed class DocumentTests
         document.Status.ShouldBe(IngestionStatus.Embedding);
         document.ChunkCount.ShouldBe(4);
 
+        TestData.EmbedAll(document);
         document.CompleteIngestion(TestData.Later);
         document.Status.ShouldBe(IngestionStatus.Completed);
         document.IsSearchable.ShouldBeTrue();
@@ -326,6 +327,7 @@ public sealed class DocumentTests
     {
         var document = TestData.DocumentIn(IngestionStatus.Embedding);
 
+        TestData.EmbedAll(document);
         document.CompleteIngestion(TestData.Later);
 
         var raised = document.DomainEvents.OfType<DocumentIngestedEvent>().ShouldHaveSingleItem();
@@ -339,6 +341,7 @@ public sealed class DocumentTests
     public void Clearing_events_empties_the_collection()
     {
         var document = TestData.DocumentIn(IngestionStatus.Embedding);
+        TestData.EmbedAll(document);
         document.CompleteIngestion(TestData.Later);
 
         document.ClearDomainEvents();
@@ -437,6 +440,7 @@ public sealed class DocumentTests
         document.BeginExtraction(TestData.Later);
         document.CompleteExtraction(TestData.Later);
         document.AddChunks(TestData.Chunks(document.Id, 2), TestData.Later);
+        TestData.EmbedAll(document);
         document.CompleteIngestion(TestData.Later);
 
         document.IsSearchable.ShouldBeTrue();
@@ -473,5 +477,83 @@ public sealed class DocumentTests
 
         Should.NotThrow(() => document.Rename(new DocumentTitle("Renamed"), TestData.Later));
         Should.NotThrow(() => document.SetAuthority(AuthorityScore.Unverified, TestData.Later));
+    }
+
+    // ── Embedding progress (Step 8) ────────────────────────────────────────────────
+
+    [Fact]
+    public void Ingestion_cannot_complete_while_a_chunk_has_no_vector()
+    {
+        var document = TestData.DocumentIn(IngestionStatus.Embedding);
+        document.RecordEmbeddings([new ChunkIndex(0), new ChunkIndex(1)], "m", TestData.Now);
+
+        var thrown = Should.Throw<DomainException>(() => document.CompleteIngestion(TestData.Later));
+
+        thrown.Message.ShouldContain("chunk 2 has no vector");
+        document.Status.ShouldBe(IngestionStatus.Embedding);
+    }
+
+    [Fact]
+    public void Ingestion_cannot_complete_without_its_chunks_loaded()
+    {
+        // A document read without its chunk collection still knows ChunkCount. Completing it
+        // would promise "every chunk is searchable" without having looked.
+        var document = TestData.DocumentIn(IngestionStatus.Embedding);
+        TestData.EmbedAll(document);
+        typeof(Document).GetField("_chunks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .GetValue(document).ShouldBeOfType<List<DocumentChunk>>().RemoveAt(2);
+
+        Should.Throw<DomainException>(() => document.CompleteIngestion(TestData.Later))
+            .Message.ShouldContain("must be loaded");
+    }
+
+    [Fact]
+    public void Embeddings_recorded_in_batches_leave_only_the_rest_awaiting()
+    {
+        var document = TestData.DocumentIn(IngestionStatus.Embedding);
+        document.ChunksAwaitingEmbedding.Count.ShouldBe(3);
+
+        document.RecordEmbeddings([new ChunkIndex(1)], "text-embedding-3-small", TestData.Later);
+
+        document.ChunksAwaitingEmbedding.Select(chunk => chunk.Index.Value).ShouldBe([0, 2]);
+        var embedded = document.Chunks.Single(chunk => chunk.Index.Value == 1);
+        embedded.EmbeddingModel.ShouldBe("text-embedding-3-small");
+        embedded.EmbeddedAt.ShouldBe(TestData.Later);
+    }
+
+    [Theory]
+    [InlineData(IngestionStatus.Chunking)]
+    [InlineData(IngestionStatus.Completed)]
+    [InlineData(IngestionStatus.Failed)]
+    public void Embeddings_can_only_be_recorded_while_embedding(IngestionStatus status)
+    {
+        var document = TestData.DocumentIn(status);
+
+        Should.Throw<InvalidStateTransitionException>(
+            () => document.RecordEmbeddings([new ChunkIndex(0)], "m", TestData.Now));
+    }
+
+    [Fact]
+    public void Recording_an_embedding_for_a_chunk_that_does_not_exist_is_refused()
+    {
+        var document = TestData.DocumentIn(IngestionStatus.Embedding);
+
+        Should.Throw<DomainException>(
+            () => document.RecordEmbeddings([new ChunkIndex(7)], "m", TestData.Now));
+    }
+
+    [Theory]
+    [InlineData(IngestionStatus.Pending, false, false)]
+    [InlineData(IngestionStatus.Extracting, false, false)]
+    [InlineData(IngestionStatus.Chunking, true, false)]
+    [InlineData(IngestionStatus.Embedding, false, true)]
+    [InlineData(IngestionStatus.Completed, false, false)]
+    [InlineData(IngestionStatus.Failed, false, false)]
+    public void The_document_says_which_indexing_stage_is_owed(IngestionStatus status, bool chunking, bool embedding)
+    {
+        var document = TestData.DocumentIn(status);
+
+        document.AwaitsChunking.ShouldBe(chunking);
+        document.AwaitsEmbedding.ShouldBe(embedding);
     }
 }

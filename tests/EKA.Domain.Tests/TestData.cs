@@ -100,6 +100,7 @@ internal static class TestData
             return document;
         }
 
+        EmbedAll(document);
         document.CompleteIngestion(Now);
         document.ClearDomainEvents();
 
@@ -107,4 +108,8 @@ internal static class TestData
             ? document
             : throw new ArgumentOutOfRangeException(nameof(status), status, "Unhandled status.");
     }
+
+    /// <summary>Records a vector for every loaded chunk, which completing ingestion requires.</summary>
+    public static void EmbedAll(Document document) =>
+        document.RecordEmbeddings(document.Chunks.Select(chunk => chunk.Index), "text-embedding-3-small", Now);
 }

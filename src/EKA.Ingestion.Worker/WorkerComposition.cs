@@ -1,5 +1,7 @@
+using EKA.AI;
 using EKA.Application;
 using EKA.Application.Abstractions;
+using EKA.Application.Documents.Indexing;
 using EKA.Application.Documents.Ingestion;
 using EKA.Infrastructure;
 
@@ -28,13 +30,23 @@ public static class WorkerComposition
         // so, rather than null (ambiguous) or a borrowed user identity (false).
         services.AddSingleton<ICurrentUser, ServiceIdentity>();
 
-        // Only the ingestion use cases: the worker answers no HTTP requests and has no chat
-        // client, so it must not register handlers that need one (step-07 section 5.4).
+        // Only the ingestion use cases: the worker answers no HTTP requests, so it must not
+        // register handlers it never runs, or carry their dependencies (step-07 section 5.4).
         services.AddApplication().AddIngestionHandlers();
 
         services.AddOptions<IngestionOptions>()
             .Bind(configuration.GetSection(IngestionOptions.SectionName))
             .ValidateOnStart();
+
+        services.AddOptions<IndexingOptions>()
+            .Bind(configuration.GetSection(IndexingOptions.SectionName))
+            .ValidateOnStart();
+
+        // The embedding model, since Step 8. Same adapter, resilience and configuration shape
+        // as the API's (ADR-0015), and its own key: the worker reads Ai:ApiKey from its own
+        // User Secrets locally and its own environment in a container. ValidateOnStart inside
+        // AddAi means a worker without a key refuses to start, rather than failing every job.
+        services.AddAi(configuration);
 
         // Same SQL Server, same file storage, same job storage as the API. The worker and the
         // API meet only through those three, never by calling each other.

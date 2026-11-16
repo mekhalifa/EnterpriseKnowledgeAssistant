@@ -1,4 +1,5 @@
 using EKA.Application.Abstractions;
+using EKA.Application.Abstractions.Ingestion;
 using EKA.Application.Common;
 using EKA.Contracts.Documents;
 using EKA.Domain.Common;
@@ -35,6 +36,7 @@ namespace EKA.Application.Documents.ResetDocument;
 public sealed class ResetDocumentHandler(
     IDocumentRepository documents,
     IUnitOfWork unitOfWork,
+    IIngestionQueue queue,
     TimeProvider timeProvider)
 {
     public async Task<Result<DocumentResponse>> HandleAsync(
@@ -59,6 +61,12 @@ public sealed class ResetDocumentHandler(
         document.Reset(timeProvider.GetUtcNow());
 
         await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Until Step 8 a reset document waited for the stalled-document sweep (StalledAfter,
+        // five minutes by default). It is handed to the worker straight away now, with the
+        // same best-effort contract as an upload: if the hand-off fails, the sweep still
+        // recovers it (ADR-0020).
+        await queue.EnqueueIngestionAsync(document.TenantId, document.Id, cancellationToken).ConfigureAwait(false);
 
         return document.ToResponse();
     }

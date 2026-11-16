@@ -149,7 +149,7 @@ public sealed class UploadDocumentHandler(
         }
 
         var queued = await queue
-            .EnqueueExtractionAsync(document.TenantId, document.Id, cancellationToken)
+            .EnqueueIngestionAsync(document.TenantId, document.Id, cancellationToken)
             .ConfigureAwait(false);
 
         return new UploadDocumentOutcome(document.ToResponse(), AlreadyRegistered: false, queued);

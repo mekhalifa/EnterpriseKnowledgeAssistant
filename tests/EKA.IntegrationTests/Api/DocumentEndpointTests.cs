@@ -27,7 +27,7 @@ public sealed class DocumentEndpointTests : IAsyncLifetime
 
     public Task InitializeAsync()
     {
-        _factory = new EkaApiFactory(_sqlServer.ConnectionString);
+        _factory = new EkaApiFactory(_sqlServer.ConnectionString, vectorStore: _sqlServer.QdrantEndpoint);
         return Task.CompletedTask;
     }
 

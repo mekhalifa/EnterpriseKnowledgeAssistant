@@ -55,6 +55,7 @@ internal static class TestFixtures
         document.AddChunks(
             Enumerable.Range(0, chunkCount).Select(i => NewChunk(document.Id, i)),
             Now);
+        document.RecordEmbeddings(document.Chunks.Select(chunk => chunk.Index), "test-embedding-model", Now);
         document.CompleteIngestion(Now);
 
         return document;

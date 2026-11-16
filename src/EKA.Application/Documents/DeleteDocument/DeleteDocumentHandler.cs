@@ -2,11 +2,12 @@ using EKA.Application.Abstractions;
 using EKA.Application.Abstractions.Ingestion;
 using EKA.Application.Common;
 using EKA.Application.Documents.Ingestion;
+using Microsoft.Extensions.Logging;
 
 namespace EKA.Application.Documents.DeleteDocument;
 
 /// <summary>
-/// Deletes a document. Its chunks go with it by cascade.
+/// Deletes a document: its row and chunks (by cascade), its files, and its vectors.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,14 +18,25 @@ namespace EKA.Application.Documents.DeleteDocument;
 /// delete visible in logs and in tests.
 /// </para>
 /// <para>
-/// <b>What this does not clean up, yet.</b> The stored file and the vectors in Qdrant.
-/// Neither exists before Steps 7 and 8, and inventing a deletion protocol for stores that
-/// have no writer would be guessing. Step 8 owns making this a complete removal; until
-/// then, deleting a document leaves nothing orphaned because nothing else has been written.
-/// Recorded as a known limitation in docs/PROGRESS.md so it cannot be forgotten.
+/// <b>Three stores, and the row goes first.</b> Once the row is gone the document no longer
+/// exists for any reader: retrieval resolves every vector it finds against SQL Server
+/// (ADR-0025), so a leftover vector points at nothing and is never shown. The reverse order
+/// would leave a "Completed" document whose vectors are gone, which is a silent hole in
+/// every answer. So the row commits first, and the files and vectors are cleaned up after.
+/// </para>
+/// <para>
+/// <b>Clean-up is best effort, and says so.</b> When it fails, the delete still succeeded:
+/// the caller's document is gone. Reporting 500 would invite a retry that 404s. The failure
+/// is logged with the ids an operator needs, and the leftovers are the orphans ADR-0021
+/// already accepts until a reconciliation job exists.
 /// </para>
 /// </remarks>
-public sealed class DeleteDocumentHandler(IDocumentRepository documents, IUnitOfWork unitOfWork, IFileStorage storage)
+public sealed partial class DeleteDocumentHandler(
+    IDocumentRepository documents,
+    IUnitOfWork unitOfWork,
+    IFileStorage storage,
+    IVectorStore vectors,
+    ILogger<DeleteDocumentHandler> logger)
 {
     public async Task<Result> HandleAsync(
         DeleteDocumentCommand command,
@@ -44,13 +56,20 @@ public sealed class DeleteDocumentHandler(IDocumentRepository documents, IUnitOf
         documents.Remove(document);
         await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        // Files after the row, never before: a crash in between leaves orphaned bytes (wasted
-        // disk), where the reverse order would leave a row whose file is gone (a document
-        // that can never be re-processed). Deletion in storage is idempotent. Vectors join
-        // this list in Step 8.
-        await storage.DeleteAsync(document.StorageKey, cancellationToken).ConfigureAwait(false);
-        await storage.DeleteAsync(ExtractedTextStore.KeyFor(document), cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await vectors.DeleteDocumentAsync(document.TenantId, document.Id, cancellationToken).ConfigureAwait(false);
+            await storage.DeleteAsync(document.StorageKey, cancellationToken).ConfigureAwait(false);
+            await storage.DeleteAsync(ExtractedTextStore.KeyFor(document), cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogCleanupFailed(logger, document.Id, document.StorageKey, exception);
+        }
 
         return Result.Success();
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Document {DocumentId} was deleted, but its vectors or files under {StorageKey} could not all be removed")]
+    private static partial void LogCleanupFailed(ILogger logger, Guid documentId, string storageKey, Exception exception);
 }

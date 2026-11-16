@@ -261,7 +261,7 @@ public sealed class ExtractDocumentTextHandlerTests
         await Handler().HandleAsync(For(document));
         _storage.Files.Count.ShouldBe(2);
 
-        await new DeleteDocumentHandler(_documents, _unitOfWork, _storage)
+        await new DeleteDocumentHandler(_documents, _unitOfWork, _storage, new FakeVectorStore(), NullLogger<DeleteDocumentHandler>.Instance)
             .HandleAsync(new DeleteDocumentCommand(document.TenantId, document.Id));
 
         _storage.Files.ShouldBeEmpty();

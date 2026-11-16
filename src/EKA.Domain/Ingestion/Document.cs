@@ -166,11 +166,11 @@ public sealed class Document : EntityAudit<Guid>
     /// much later as an answer that is confidently missing a paragraph — the kind of bug
     /// that is nearly impossible to trace backwards from the output.
     /// <para>
-    /// Step 8 writes chunks in bulk for large documents rather than through this method,
-    /// for performance. The ordering invariant is therefore ALSO enforced by a unique
-    /// database index on <c>(DocumentId, ChunkIndex)</c> added in Step 3 — when an
-    /// invariant cannot live in the aggregate, it moves to a constraint that cannot be
-    /// bypassed.
+    /// The ordering invariant is ALSO enforced by a unique database index on
+    /// <c>(DocumentId, ChunkIndex)</c> added in Step 3, so a future bulk writer that
+    /// bypasses this method for very large documents still cannot break it. Step 8 goes
+    /// through this method: EF Core batches the inserts, which is fast enough for the
+    /// document sizes the upload limit allows.
     /// </para>
     /// </remarks>
     public void AddChunks(IEnumerable<DocumentChunk> chunks, DateTimeOffset at)
@@ -210,6 +210,55 @@ public sealed class Document : EntityAudit<Guid>
         MarkModified(at);
     }
 
+    /// <summary>Text is extracted and waiting to be cut into chunks.</summary>
+    public bool AwaitsChunking => Status is IngestionStatus.Chunking;
+
+    /// <summary>Chunks exist, and at least one still needs its vector.</summary>
+    /// <remarks>
+    /// Like <see cref="AwaitsExtraction"/>, it lets a redelivered job ask the aggregate
+    /// which work is owed instead of re-deriving the state machine from <see cref="Status"/>.
+    /// </remarks>
+    public bool AwaitsEmbedding => Status is IngestionStatus.Embedding;
+
+    /// <summary>
+    /// The loaded chunks that have no vector yet, in index order. Empty when the chunk
+    /// collection was not loaded, so read it only after loading the chunks.
+    /// </summary>
+    public IReadOnlyList<DocumentChunk> ChunksAwaitingEmbedding =>
+        _chunks.Where(chunk => !chunk.IsEmbedded).OrderBy(chunk => chunk.Index).ToList();
+
+    /// <summary>
+    /// Records that the chunks at <paramref name="indexes"/> now have vectors from
+    /// <paramref name="embeddingModel"/>, durably stored in the vector index.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Called once per completed batch rather than once at the end, so a failure halfway
+    /// through a 3,000-chunk document keeps the first half: the retry embeds only what is
+    /// still missing. That is the "one failure must not lose the batch's progress" rule.
+    /// </para>
+    /// <para>
+    /// Through the root rather than <see cref="DocumentChunk.MarkEmbedded"/> directly, so the
+    /// status rule holds: vectors are recorded only while the document is embedding.
+    /// </para>
+    /// </remarks>
+    public void RecordEmbeddings(IEnumerable<ChunkIndex> indexes, string embeddingModel, DateTimeOffset at)
+    {
+        ArgumentNullException.ThrowIfNull(indexes);
+        EnsureStatusIs(IngestionStatus.Embedding, IngestionStatus.Embedding);
+
+        foreach (var index in indexes)
+        {
+            var chunk = _chunks.Find(c => c.Index == index)
+                ?? throw new DomainException(
+                    $"Document {Id} has no loaded chunk {index}; load the chunks before recording embeddings.");
+
+            chunk.MarkEmbedded(embeddingModel, at);
+        }
+
+        MarkModified(at);
+    }
+
     public void CompleteIngestion(DateTimeOffset at)
     {
         EnsureStatusIs(IngestionStatus.Embedding, IngestionStatus.Completed);
@@ -218,6 +267,22 @@ public sealed class Document : EntityAudit<Guid>
         {
             throw new DomainException(
                 $"Document {Id} cannot complete ingestion with no chunks.");
+        }
+
+        // Checked against the loaded collection, which is why it must be loaded: "completed"
+        // is the promise that every chunk is searchable. A document completed with a chunk
+        // missing its vector answers questions with a silent hole in it (Step 8).
+        if (_chunks.Count != ChunkCount)
+        {
+            throw new DomainException(
+                $"Document {Id} must be loaded with its {ChunkCount} chunks to complete ingestion.");
+        }
+
+        var missing = _chunks.Find(chunk => !chunk.IsEmbedded);
+        if (missing is not null)
+        {
+            throw new DomainException(
+                $"Document {Id} cannot complete ingestion: chunk {missing.Index} has no vector.");
         }
 
         Status = IngestionStatus.Completed;

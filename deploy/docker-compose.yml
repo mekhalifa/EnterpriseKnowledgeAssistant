@@ -1,7 +1,7 @@
 # Local development dependencies for the Enterprise Knowledge Assistant.
 #
-# Step 3 brings up SQL Server only. Qdrant arrives in Step 8, Redis in Step 12, and the
-# API and worker containers in Step 14 — each added when something actually uses it, so
+# SQL Server since Step 3, Qdrant since Step 8. Redis arrives in Step 12, and the API and
+# worker containers in Step 14 — each added when something actually uses it, so
 # `docker compose up` never starts services that do nothing.
 #
 # Usage:
@@ -56,6 +56,30 @@ services:
       # first boot from being reported as unhealthy.
       start_period: 40s
 
+  qdrant:
+    # Pinned to the minor the Qdrant.Client package targets (ADR-0025). The client speaks
+    # the server's gRPC API, so letting the server float to a new minor while the client
+    # stays put is how "it worked yesterday" happens.
+    image: qdrant/qdrant:v1.20.0
+    container_name: eka-qdrant
+    restart: unless-stopped
+    ports:
+      # 6333 is REST and the web dashboard (http://127.0.0.1:6333/dashboard); 6334 is gRPC,
+      # which the application uses. Loopback only, like SQL Server: with no API key set,
+      # anything that can reach these ports can read and delete every vector.
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - eka-qdrantdata:/qdrant/storage
+    healthcheck:
+      # The image has no curl or wget; bash's /dev/tcp opens the port without them.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
 volumes:
   eka-sqldata:
     name: eka-sqldata
+  eka-qdrantdata:
+    name: eka-qdrantdata

@@ -9,6 +9,8 @@ using EKA.Application.Identity;
 using EKA.Application.Documents.GetDocument;
 using EKA.Application.Documents.ListDocuments;
 using EKA.Application.Documents.ExtractDocumentText;
+using EKA.Application.Documents.IndexDocument;
+using EKA.Application.Documents.Indexing;
 using EKA.Application.Documents.Ingestion;
 using EKA.Application.Documents.RecoverStalledDocuments;
 using EKA.Application.Documents.UploadDocument;
@@ -72,6 +74,14 @@ public static class DependencyInjection
         // validated at startup.
         services.AddSingleton<IValidateOptions<ChatOptions>, ChatOptionsValidator>();
         services.AddSingleton<IValidateOptions<IngestionOptions>, IngestionOptionsValidator>();
+        services.AddSingleton<IValidateOptions<IndexingOptions>, IndexingOptionsValidator>();
+
+        // Pure and stateless, and needed by both hosts since Step 8: the API budgets prompts
+        // with it, the worker sizes chunks with it. One counter for both means a chunk the
+        // worker sized at 500 tokens costs 500 tokens when the API puts it in a prompt.
+        // Replaced by a real tokenizer in EKA.AI if Step 11 shows the estimate is not
+        // conservative enough (see ITokenCounter).
+        services.AddSingleton<ITokenCounter, EstimatingTokenCounter>();
 
         // Taken from the marker's assembly rather than `...Containing<TMarker>()`, which
         // cannot accept a static class as a type argument.
@@ -107,10 +117,6 @@ public static class DependencyInjection
         // into the second.
         services.AddTransient<PromptBuilder>();
 
-        // Pure and stateless. Replaced by a real tokenizer in EKA.AI if Step 11 shows the
-        // estimate is not conservative enough (see ITokenCounter).
-        services.AddSingleton<ITokenCounter, EstimatingTokenCounter>();
-
         return services;
     }
 
@@ -123,6 +129,11 @@ public static class DependencyInjection
         services.AddScoped<RecoverStalledDocumentsHandler>();
         services.AddScoped<TextExtractionPipeline>();
         services.AddScoped<ExtractedTextStore>();
+
+        services.AddScoped<IndexDocumentHandler>();
+
+        // The chunking Strategy. Swapping the algorithm (Step 11) is this one line.
+        services.AddSingleton<IChunkingStrategy, SectionAwareChunker>();
 
         return services;
     }

@@ -49,6 +49,9 @@ useful as the current belief.
 | [0021](0021-file-storage-port-local-disk.md) | An `IFileStorage` port, with local disk as the first adapter | Accepted | 2026-11-15 |
 | [0022](0022-pure-dotnet-text-extraction.md) | Pure .NET text extraction, with detection from content | Accepted | 2026-11-15 |
 | [0023](0023-extracted-text-artifact.md) | Extracted text is a versioned JSON artifact in file storage | Accepted | 2026-11-15 |
+| [0024](0024-section-aware-chunking-deterministic-point-ids.md) | Section-aware chunking, and vector ids derived from (document, chunk index) | Accepted | 2026-11-16 |
+| [0025](0025-qdrant-official-client-single-collection.md) | Qdrant through its official client, one collection partitioned by tenant, no text in the payload | Accepted | 2026-11-16 |
+| [0026](0026-one-ingestion-job-resumable-stages.md) | One ingestion job per document, with stages that resume from the document's state | Accepted | 2026-11-16 |
 
 ## Template
 

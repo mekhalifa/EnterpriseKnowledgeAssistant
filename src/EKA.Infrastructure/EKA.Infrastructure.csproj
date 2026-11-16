@@ -18,6 +18,8 @@
     <PackageReference Include="Hangfire.NetCore" />
     <PackageReference Include="PdfPig" />
     <PackageReference Include="DocumentFormat.OpenXml" />
+    <!-- Vector store adapter (Step 8). Also forbidden in EKA.Application. -->
+    <PackageReference Include="Qdrant.Client" />
   </ItemGroup>
 
   <ItemGroup>

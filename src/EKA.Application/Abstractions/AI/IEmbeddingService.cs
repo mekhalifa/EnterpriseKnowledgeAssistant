@@ -26,6 +26,18 @@ public interface IEmbeddingService
     /// <summary>The vector length this service is configured to produce.</summary>
     int Dimensions { get; }
 
+    /// <summary>
+    /// The configured model, recorded on every chunk it embeds (<c>DocumentChunk.EmbeddingModel</c>).
+    /// </summary>
+    /// <remarks>
+    /// The configured name, not the one a provider echoes back in
+    /// <see cref="EmbeddingBatch.Model"/>. That echo is optional, and it can be a dated
+    /// snapshot name (<c>text-embedding-3-small-2024…</c>) that would make two identical
+    /// configurations look like two different models. The question this answers is "would
+    /// a query embedded today land in the same space?", and configuration is what decides it.
+    /// </remarks>
+    string Model { get; }
+
     /// <param name="inputs">One or more texts. An empty list is a programming error and
     /// throws <see cref="ArgumentException"/>, not a <see cref="Result"/>.</param>
     /// <param name="cancellationToken">Cancels the call.</param>

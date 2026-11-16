@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using EKA.Application.Common;
 using EKA.Application.Documents.DeleteDocument;
 using EKA.Application.Documents.RenameDocument;
@@ -70,7 +71,9 @@ public sealed class ResetDocumentHandlerTests
     private readonly FakeUnitOfWork _unitOfWork = new();
     private readonly FixedTimeProvider _clock = FixedTimeProvider.Default;
 
-    private ResetDocumentHandler Handler => new(_documents, _unitOfWork, _clock);
+    private readonly FakeIngestionQueue _queue = new();
+
+    private ResetDocumentHandler Handler => new(_documents, _unitOfWork, _queue, _clock);
 
     [Fact]
     public async Task A_failed_document_returns_to_pending()
@@ -84,6 +87,17 @@ public sealed class ResetDocumentHandlerTests
         result.Value.Status.ShouldBe(nameof(IngestionStatus.Pending));
         result.Value.ChunkCount.ShouldBe(0);
         _unitOfWork.SaveCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task A_reset_document_is_handed_to_the_worker_without_waiting_for_the_sweep()
+    {
+        var document = TestData.FailedDocument();
+        _documents.With(document);
+
+        await Handler.HandleAsync(new ResetDocumentCommand(TestData.Tenant, document.Id));
+
+        _queue.Enqueued.ShouldBe([(TestData.Tenant, document.Id)]);
     }
 
     [Fact]
@@ -135,7 +149,8 @@ public sealed class DeleteDocumentHandlerTests
     private readonly FakeDocumentRepository _documents = new();
     private readonly FakeUnitOfWork _unitOfWork = new();
 
-    private DeleteDocumentHandler Handler => new(_documents, _unitOfWork, new FakeFileStorage());
+    private DeleteDocumentHandler Handler => new(
+        _documents, _unitOfWork, new FakeFileStorage(), new FakeVectorStore(), NullLogger<DeleteDocumentHandler>.Instance);
 
     [Fact]
     public async Task Deleting_stages_the_removal_and_commits_once()

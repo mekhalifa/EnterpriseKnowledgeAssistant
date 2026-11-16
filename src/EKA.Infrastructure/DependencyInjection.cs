@@ -3,6 +3,9 @@ using EKA.Application.Abstractions.Ingestion;
 using EKA.Infrastructure.Extraction;
 using EKA.Infrastructure.Jobs;
 using EKA.Infrastructure.Storage;
+using EKA.Infrastructure.VectorStore;
+using Microsoft.Extensions.Options;
+using Qdrant.Client;
 using Hangfire;
 using Hangfire.SqlServer;
 using Microsoft.Data.SqlClient;
@@ -103,6 +106,7 @@ public static class DependencyInjection
         services.AddScoped<IAIProviderRepository, AIProviderRepository>();
 
         AddIngestion(services, configuration, connectionString);
+        AddVectorStore(services, configuration);
 
         return services;
     }
@@ -147,6 +151,29 @@ public static class DependencyInjection
                     // wait for extraction short, at the cost of one cheap query per second.
                     QueuePollInterval = TimeSpan.FromSeconds(1),
                 }));
+    }
+
+    /// <summary>
+    /// The Qdrant adapter. Registered in both hosts: the worker writes vectors, and the API
+    /// deletes them with their document (and searches them, from Step 9).
+    /// </summary>
+    private static void AddVectorStore(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddOptions<VectorStoreOptions>().Bind(configuration.GetSection(VectorStoreOptions.SectionName));
+
+        // One client per process. It owns a gRPC channel (one HTTP/2 connection multiplexing
+        // every call), which is built to be shared and is expensive to create. Constructing it
+        // does not connect, so a host starts even when Qdrant is down, and the first call says so.
+        services.AddSingleton(serviceProvider =>
+        {
+            var options = serviceProvider.GetRequiredService<IOptions<VectorStoreOptions>>().Value;
+            return new QdrantClient(
+                options.Endpoint,
+                string.IsNullOrWhiteSpace(options.ApiKey) ? null : options.ApiKey);
+        });
+
+        // Singleton: it remembers, per process, that the collection has been checked.
+        services.AddSingleton<IVectorStore, QdrantVectorStore>();
     }
 
     /// <summary>
