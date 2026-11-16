@@ -19,7 +19,7 @@ public sealed class GetDocumentHandlerTests
         var document = TestData.Document();
         _documents.With(document);
 
-        var result = await Handler.HandleAsync(new GetDocumentQuery(TestData.Tenant, document.Id));
+        var result = await Handler.HandleAsync(new GetDocumentQuery(TestData.Caller(TestData.Tenant), document.Id));
 
         result.IsSuccess.ShouldBeTrue();
         result.Value.Id.ShouldBe(document.Id);
@@ -32,7 +32,7 @@ public sealed class GetDocumentHandlerTests
         _documents.With(document);
 
         // Same id, wrong tenant. The attacker's version of this test is a loop over GUIDs.
-        var result = await Handler.HandleAsync(new GetDocumentQuery(TestData.Tenant, document.Id));
+        var result = await Handler.HandleAsync(new GetDocumentQuery(TestData.Caller(TestData.Tenant), document.Id));
 
         result.IsFailure.ShouldBeTrue();
 
@@ -46,7 +46,7 @@ public sealed class GetDocumentHandlerTests
     public async Task A_missing_document_is_reported_as_not_found()
     {
         var result = await Handler.HandleAsync(
-            new GetDocumentQuery(TestData.Tenant, Guid.CreateVersion7()));
+            new GetDocumentQuery(TestData.Caller(TestData.Tenant), Guid.CreateVersion7()));
 
         result.Error.Type.ShouldBe(ErrorType.NotFound);
     }
@@ -59,7 +59,7 @@ public sealed class ListDocumentsHandlerTests
     private ListDocumentsHandler Handler => new(_documents);
 
     private ListDocumentsQuery Query(string? status = null, int page = 1, int pageSize = 20) =>
-        new(TestData.Tenant, status, page, pageSize);
+        new(TestData.Caller(), status, page, pageSize);
 
     private void Seed(int count, EKA.Domain.Common.TenantId? tenantId = null)
     {

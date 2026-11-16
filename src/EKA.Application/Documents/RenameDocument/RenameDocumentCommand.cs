@@ -1,9 +1,9 @@
-using EKA.Domain.Common;
+using EKA.Domain.Access;
 
 namespace EKA.Application.Documents.RenameDocument;
 
 /// <summary>Changes a document's display name.</summary>
-/// <param name="TenantId">The caller's tenant.</param>
+/// <param name="Caller">Who is asking. A document they may not read is not found.</param>
 /// <param name="DocumentId">The document to rename.</param>
 /// <param name="Title">The new title.</param>
-public sealed record RenameDocumentCommand(TenantId TenantId, Guid DocumentId, string Title);
+public sealed record RenameDocumentCommand(AccessScope Caller, Guid DocumentId, string Title);

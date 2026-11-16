@@ -19,6 +19,7 @@ namespace EKA.Contracts.Documents;
 /// <param name="ModifiedAt">When it last changed, or null if never.</param>
 /// <param name="ExtractedAt">When text extraction completed, or null.</param>
 /// <param name="IngestedAt">When ingestion completed, or null.</param>
+/// <param name="Access">Who may read it: <c>["tenant"]</c>, or <c>user:…</c> and <c>group:…</c> keys.</param>
 /// <remarks>
 /// <para>
 /// <b>Why this exists rather than returning <c>Document</c>.</b> Three reasons, in order of
@@ -67,4 +68,5 @@ public sealed record DocumentResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? ModifiedAt,
     DateTimeOffset? ExtractedAt,
-    DateTimeOffset? IngestedAt);
+    DateTimeOffset? IngestedAt,
+    IReadOnlyList<string> Access);

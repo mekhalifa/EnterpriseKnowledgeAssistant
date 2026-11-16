@@ -83,8 +83,9 @@ public sealed class UploadDocumentHandler(
             return DocumentErrors.UnsupportedFileType(fileName);
         }
 
+        var tenantId = command.Caller.TenantId;
         var documentId = Guid.CreateVersion7();
-        var storageKey = StorageKeys.For(command.TenantId, documentId, fileName);
+        var storageKey = StorageKeys.For(tenantId, documentId, fileName);
 
         string contentHash;
         long sizeBytes;
@@ -105,18 +106,18 @@ public sealed class UploadDocumentHandler(
         }
 
         var existing = await documents
-            .FindByContentHashAsync(command.TenantId, contentHash, cancellationToken)
+            .FindByContentHashAsync(tenantId, contentHash, cancellationToken)
             .ConfigureAwait(false);
 
         if (existing is not null)
         {
             await storage.DeleteAsync(storageKey, cancellationToken).ConfigureAwait(false);
-            return new UploadDocumentOutcome(existing.ToResponse(), AlreadyRegistered: true, Queued: false);
+            return AlreadyRegistered(existing, command);
         }
 
         var document = new Document(
             documentId,
-            command.TenantId,
+            tenantId,
             new DocumentTitle(command.Title ?? DefaultTitle(fileName)),
             new FileMetadata(fileName, FileTypeDetector.ContentTypeOf(fileType), sizeBytes, contentHash),
             storageKey,
@@ -136,11 +137,11 @@ public sealed class UploadDocumentHandler(
             await storage.DeleteAsync(storageKey, cancellationToken).ConfigureAwait(false);
 
             var winner = await documents
-                .FindByContentHashAsync(command.TenantId, contentHash, cancellationToken)
+                .FindByContentHashAsync(tenantId, contentHash, cancellationToken)
                 .ConfigureAwait(false)
                 ?? throw new InvalidOperationException("Unique index rejected the insert, but no conflicting document exists.");
 
-            return new UploadDocumentOutcome(winner.ToResponse(), AlreadyRegistered: true, Queued: false);
+            return AlreadyRegistered(winner, command);
         }
         catch
         {
@@ -154,6 +155,22 @@ public sealed class UploadDocumentHandler(
 
         return new UploadDocumentOutcome(document.ToResponse(), AlreadyRegistered: false, queued);
     }
+
+    /// <summary>
+    /// The same bytes are already a document. Returned to a caller who may read it; refused,
+    /// without naming it, to one who may not.
+    /// </summary>
+    /// <remarks>
+    /// Content hashes are unique per tenant, so a colleague uploading a file that is already
+    /// restricted to HR cannot get a second, readable copy. Returning the existing document
+    /// would hand them its id, title and status. A 409 still says "these bytes exist here",
+    /// which is a smaller disclosure, and the only one any answer can avoid: creating a
+    /// duplicate would break the idempotency index. Recorded in step-09.
+    /// </remarks>
+    private static Result<UploadDocumentOutcome> AlreadyRegistered(Document existing, UploadDocumentCommand command) =>
+        existing.IsAccessibleTo(command.Caller)
+            ? new UploadDocumentOutcome(existing.ToResponse(), AlreadyRegistered: true, Queued: false)
+            : DocumentErrors.DuplicateNotAccessible;
 
     /// <summary>"Leave Policy 2026.pdf" becomes "Leave Policy 2026", cut to the title limit.</summary>
     private static string DefaultTitle(string fileName)

@@ -1,5 +1,6 @@
 using EKA.Application.Abstractions;
 using EKA.Application.Common;
+using EKA.Domain.Access;
 using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
 using Microsoft.EntityFrameworkCore;
@@ -96,16 +97,24 @@ internal sealed class DocumentRepository : IDocumentRepository
             .ConfigureAwait(false);
 
     public async Task<PagedResult<Document>> ListAsync(
-        TenantId tenantId,
+        AccessScope caller,
         IngestionStatus? status,
         int skip,
         int take,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(caller);
+
+        var tenantId = caller.TenantId;
+        var callerKeys = caller.Keys.ToList();
+
         // Built once and reused for both the count and the page, so the two cannot drift
-        // apart as the filter grows. The tenant predicate is applied before anything else
-        // and is not optional.
-        var query = _context.Documents.Where(document => document.TenantId == tenantId);
+        // apart as the filter grows. Tenant and access are applied before anything else and
+        // are not optional. Access is the domain rule (Document.IsAccessibleTo) written in
+        // SQL: the document's keys and the caller's share an entry.
+        var query = _context.Documents.Where(document =>
+            document.TenantId == tenantId
+            && document.AccessKeys.Any(key => callerKeys.Contains(key)));
 
         if (status is not null)
         {

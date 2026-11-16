@@ -44,7 +44,8 @@ internal static class DocumentMapping
             document.CreatedAt,
             document.ModifiedAt,
             document.ExtractedAt,
-            document.IngestedAt);
+            document.IngestedAt,
+            [.. document.AccessKeys]);
 
     public static DocumentSummaryResponse ToSummary(this Document document) =>
         new(

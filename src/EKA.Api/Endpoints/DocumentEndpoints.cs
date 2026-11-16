@@ -8,6 +8,7 @@ using EKA.Application.Documents.GetDocument;
 using EKA.Application.Documents.ListDocuments;
 using EKA.Application.Documents.RenameDocument;
 using EKA.Application.Documents.ResetDocument;
+using EKA.Application.Documents.SetDocumentAccess;
 using EKA.Application.Documents.UploadDocument;
 using EKA.Application.Documents.Ingestion;
 using Microsoft.AspNetCore.Mvc;
@@ -96,6 +97,14 @@ internal static class DocumentEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status409Conflict);
 
+        documents.MapPut("/{documentId:guid}/access", SetAccessAsync)
+            .WithName("SetDocumentAccess")
+            .WithSummary("Replaces who may read a document: [\"tenant\"], or user:<subject> and group:<id> keys.")
+            .WithValidation<SetDocumentAccessRequest>()
+            .Produces<DocumentResponse>()
+            .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         documents.MapDelete("/{documentId:guid}", DeleteAsync)
             .WithName("DeleteDocument")
             .WithSummary("Deletes a document and its chunks.")
@@ -148,7 +157,7 @@ internal static class DocumentEndpoints
         await using var content = file.OpenReadStream();
 
         var command = new UploadDocumentCommand(
-            currentUser.RequireTenantId(),
+            currentUser.RequireAccessScope(),
             file.FileName,
             content,
             metadata.Title,
@@ -167,7 +176,7 @@ internal static class DocumentEndpoints
         ICurrentUser currentUser,
         CancellationToken cancellationToken)
     {
-        var query = new GetDocumentQuery(currentUser.RequireTenantId(), documentId);
+        var query = new GetDocumentQuery(currentUser.RequireAccessScope(), documentId);
 
         var result = await handler.HandleAsync(query, cancellationToken).ConfigureAwait(false);
 
@@ -182,7 +191,7 @@ internal static class DocumentEndpoints
         int page = 1,
         int pageSize = ListDocumentsHandler.DefaultPageSize)
     {
-        var query = new ListDocumentsQuery(currentUser.RequireTenantId(), status, page, pageSize);
+        var query = new ListDocumentsQuery(currentUser.RequireAccessScope(), status, page, pageSize);
 
         var result = await handler.HandleAsync(query, cancellationToken).ConfigureAwait(false);
 
@@ -197,7 +206,7 @@ internal static class DocumentEndpoints
         CancellationToken cancellationToken)
     {
         var command = new RenameDocumentCommand(
-            currentUser.RequireTenantId(),
+            currentUser.RequireAccessScope(),
             documentId,
             request.Title);
 
@@ -219,7 +228,21 @@ internal static class DocumentEndpoints
         ICurrentUser currentUser,
         CancellationToken cancellationToken)
     {
-        var command = new ResetDocumentCommand(currentUser.RequireTenantId(), documentId);
+        var command = new ResetDocumentCommand(currentUser.RequireAccessScope(), documentId);
+
+        var result = await handler.HandleAsync(command, cancellationToken).ConfigureAwait(false);
+
+        return result.Match(Results.Ok);
+    }
+
+    private static async Task<IResult> SetAccessAsync(
+        Guid documentId,
+        SetDocumentAccessRequest request,
+        SetDocumentAccessHandler handler,
+        ICurrentUser currentUser,
+        CancellationToken cancellationToken)
+    {
+        var command = new SetDocumentAccessCommand(currentUser.RequireAccessScope(), documentId, request.Principals);
 
         var result = await handler.HandleAsync(command, cancellationToken).ConfigureAwait(false);
 
@@ -232,7 +255,7 @@ internal static class DocumentEndpoints
         ICurrentUser currentUser,
         CancellationToken cancellationToken)
     {
-        var command = new DeleteDocumentCommand(currentUser.RequireTenantId(), documentId);
+        var command = new DeleteDocumentCommand(currentUser.RequireAccessScope(), documentId);
 
         var result = await handler.HandleAsync(command, cancellationToken).ConfigureAwait(false);
 

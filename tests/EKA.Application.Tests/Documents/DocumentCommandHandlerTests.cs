@@ -26,7 +26,7 @@ public sealed class RenameDocumentHandlerTests
         _clock.Advance(TimeSpan.FromHours(2));
 
         var result = await Handler.HandleAsync(
-            new RenameDocumentCommand(TestData.Tenant, document.Id, "  Updated handbook  "));
+            new RenameDocumentCommand(TestData.Caller(TestData.Tenant), document.Id, "  Updated handbook  "));
 
         result.Value.Title.ShouldBe("Updated handbook"); // trimmed by DocumentTitle
         result.Value.ModifiedAt.ShouldBe(FixedTimeProvider.DefaultNow.AddHours(2));
@@ -40,7 +40,7 @@ public sealed class RenameDocumentHandlerTests
         _documents.With(document);
 
         var result = await Handler.HandleAsync(
-            new RenameDocumentCommand(TestData.Tenant, document.Id, "Mine now"));
+            new RenameDocumentCommand(TestData.Caller(TestData.Tenant), document.Id, "Mine now"));
 
         result.Error.Type.ShouldBe(ErrorType.NotFound);
 
@@ -59,7 +59,7 @@ public sealed class RenameDocumentHandlerTests
         // the backstop, and it must still refuse — otherwise the ingestion worker or a
         // future caller could create a state the API would never accept.
         await Should.ThrowAsync<DomainException>(() => Handler.HandleAsync(
-            new RenameDocumentCommand(TestData.Tenant, document.Id, "   ")));
+            new RenameDocumentCommand(TestData.Caller(TestData.Tenant), document.Id, "   ")));
 
         _unitOfWork.SaveCount.ShouldBe(0);
     }
@@ -82,7 +82,7 @@ public sealed class ResetDocumentHandlerTests
         _documents.With(document);
 
         var result = await Handler.HandleAsync(
-            new ResetDocumentCommand(TestData.Tenant, document.Id));
+            new ResetDocumentCommand(TestData.Caller(TestData.Tenant), document.Id));
 
         result.Value.Status.ShouldBe(nameof(IngestionStatus.Pending));
         result.Value.ChunkCount.ShouldBe(0);
@@ -95,7 +95,7 @@ public sealed class ResetDocumentHandlerTests
         var document = TestData.FailedDocument();
         _documents.With(document);
 
-        await Handler.HandleAsync(new ResetDocumentCommand(TestData.Tenant, document.Id));
+        await Handler.HandleAsync(new ResetDocumentCommand(TestData.Caller(TestData.Tenant), document.Id));
 
         _queue.Enqueued.ShouldBe([(TestData.Tenant, document.Id)]);
     }
@@ -107,7 +107,7 @@ public sealed class ResetDocumentHandlerTests
         _documents.With(document);
 
         var result = await Handler.HandleAsync(
-            new ResetDocumentCommand(TestData.Tenant, document.Id));
+            new ResetDocumentCommand(TestData.Caller(TestData.Tenant), document.Id));
 
         // Deliberately not reset by Document.Reset: a document that fails five times needs
         // escalating, and a counter that forgets makes that impossible to notice.
@@ -125,7 +125,7 @@ public sealed class ResetDocumentHandlerTests
         // copy of the state machine that lives in Document. The API maps this exception to
         // 409 in one place.
         await Should.ThrowAsync<InvalidStateTransitionException>(() => Handler.HandleAsync(
-            new ResetDocumentCommand(TestData.Tenant, document.Id)));
+            new ResetDocumentCommand(TestData.Caller(TestData.Tenant), document.Id)));
 
         _unitOfWork.SaveCount.ShouldBe(0);
     }
@@ -137,7 +137,7 @@ public sealed class ResetDocumentHandlerTests
         _documents.With(document);
 
         var result = await Handler.HandleAsync(
-            new ResetDocumentCommand(TestData.Tenant, document.Id));
+            new ResetDocumentCommand(TestData.Caller(TestData.Tenant), document.Id));
 
         result.Error.Type.ShouldBe(ErrorType.NotFound);
         document.Status.ShouldBe(IngestionStatus.Failed);
@@ -159,7 +159,7 @@ public sealed class DeleteDocumentHandlerTests
         _documents.With(document);
 
         var result = await Handler.HandleAsync(
-            new DeleteDocumentCommand(TestData.Tenant, document.Id));
+            new DeleteDocumentCommand(TestData.Caller(TestData.Tenant), document.Id));
 
         result.IsSuccess.ShouldBeTrue();
         _documents.Removed.ShouldContain(document);
@@ -170,7 +170,7 @@ public sealed class DeleteDocumentHandlerTests
     public async Task Deleting_something_that_is_not_there_is_not_found_not_success()
     {
         var result = await Handler.HandleAsync(
-            new DeleteDocumentCommand(TestData.Tenant, Guid.CreateVersion7()));
+            new DeleteDocumentCommand(TestData.Caller(TestData.Tenant), Guid.CreateVersion7()));
 
         // A cheerful 204 here would make a wrong-tenant delete indistinguishable from a
         // legitimate one in every log the system produces.
@@ -184,7 +184,7 @@ public sealed class DeleteDocumentHandlerTests
         _documents.With(document);
 
         var result = await Handler.HandleAsync(
-            new DeleteDocumentCommand(TestData.Tenant, document.Id));
+            new DeleteDocumentCommand(TestData.Caller(TestData.Tenant), document.Id));
 
         result.Error.Type.ShouldBe(ErrorType.NotFound);
         _documents.All.ShouldContain(document);

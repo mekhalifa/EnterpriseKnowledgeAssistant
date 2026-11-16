@@ -1,5 +1,7 @@
+using EKA.Application.Retrieval;
 using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
+using EKA.Domain.Retrieval;
 
 namespace EKA.Application.Abstractions.Ingestion;
 
@@ -37,7 +39,44 @@ public interface IVectorStore
 
     /// <summary>How many vectors the store holds for one document. For verification and tests.</summary>
     Task<long> CountDocumentAsync(TenantId tenantId, Guid documentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The chunks nearest <paramref name="query"/> that satisfy <paramref name="filter"/>, best
+    /// first, applying the filter <b>inside</b> the search rather than to its results (Step 9).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Inside, not after.</b> Filtering the top 10 afterwards returns fewer than 10 whenever
+    /// other tenants' chunks are nearer, and at worst nothing, while an attacker learns from the
+    /// gap. Filtering inside returns the caller's 10 nearest.
+    /// </para>
+    /// <para>
+    /// Returns identifiers and scores only. The text comes from SQL Server, which re-checks
+    /// access (ADR-0025, ADR-0027). An empty or missing collection is an empty result.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">The filter does not pin a tenant
+    /// (<see cref="ChunkFilter.PinnedTenant"/>). A search across tenants is a bug, refused.</exception>
+    Task<IReadOnlyList<VectorHit>> SearchAsync(
+        ReadOnlyMemory<float> query,
+        ChunkFilter filter,
+        int limit,
+        SimilarityScore minimumScore,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Replaces the access keys stored with every vector of one document. Not an error if there
+    /// are none.
+    /// </summary>
+    Task SetDocumentAccessAsync(
+        TenantId tenantId,
+        Guid documentId,
+        IReadOnlyList<string> accessKeys,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>One search result: which chunk, and how close.</summary>
+public sealed record VectorHit(Guid DocumentId, ChunkIndex ChunkIndex, SimilarityScore Score);
 
 /// <summary>
 /// One chunk's vector and the metadata retrieval needs to filter and cite it.
@@ -47,6 +86,9 @@ public interface IVectorStore
 /// stays in SQL Server, its single source of truth, and Step 9 reads it from there for the
 /// chunks a search returns (ADR-0025).
 /// </remarks>
+/// <param name="AccessKeys">The document's access keys (<c>tenant</c>, <c>user:…</c>,
+/// <c>group:…</c>), copied so the search can filter on them (ADR-0027). A copy: SQL Server
+/// stays the authority.</param>
 public sealed record ChunkVector(
     TenantId TenantId,
     Guid DocumentId,
@@ -54,4 +96,5 @@ public sealed record ChunkVector(
     ReadOnlyMemory<float> Vector,
     string EmbeddingModel,
     PageRange? Pages,
-    string? SectionPath);
+    string? SectionPath,
+    IReadOnlyList<string> AccessKeys);

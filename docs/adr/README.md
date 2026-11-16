@@ -52,6 +52,8 @@ useful as the current belief.
 | [0024](0024-section-aware-chunking-deterministic-point-ids.md) | Section-aware chunking, and vector ids derived from (document, chunk index) | Accepted | 2026-11-16 |
 | [0025](0025-qdrant-official-client-single-collection.md) | Qdrant through its official client, one collection partitioned by tenant, no text in the payload | Accepted | 2026-11-16 |
 | [0026](0026-one-ingestion-job-resumable-stages.md) | One ingestion job per document, with stages that resume from the document's state | Accepted | 2026-11-16 |
+| [0027](0027-document-acl-canonical-keys.md) | Document access as canonical principal keys, filtered inside the vector query and re-checked in SQL | Accepted | 2026-11-16 |
+| [0028](0028-retrieval-contract.md) | The retrieval contract: dense-only, configured top-K and floor, over-fetch, empty as success | Accepted | 2026-11-16 |
 
 ## Template
 

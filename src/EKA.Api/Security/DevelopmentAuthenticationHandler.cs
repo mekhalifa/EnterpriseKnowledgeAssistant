@@ -59,8 +59,15 @@ internal sealed class DevelopmentAuthenticationHandler : AuthenticationHandler<A
             ? parsed
             : _development.DefaultTenantId;
 
+        // One claim per group, the shape Entra ID uses, so nothing downstream can come to depend
+        // on a comma-separated value that a real provider never sends.
+        var groups = Request.Headers[DevelopmentAuthenticationOptions.GroupsHeader].ToString()
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(group => new Claim(HttpContextCurrentUser.GroupsClaim, group));
+
         var identity = new ClaimsIdentity(
             [
+                .. groups,
                 // Both spellings, for the same reason HttpContextCurrentUser reads both:
                 // whether a real JWT handler maps `sub` to NameIdentifier depends on a
                 // setting teams routinely turn off.

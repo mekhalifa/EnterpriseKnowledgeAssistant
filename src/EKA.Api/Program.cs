@@ -6,6 +6,7 @@ using EKA.Application;
 using EKA.Application.Abstractions;
 using EKA.Application.Conversations;
 using EKA.Application.Documents.Ingestion;
+using EKA.Application.Retrieval;
 using EKA.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 
@@ -126,6 +127,12 @@ builder.Services.AddOptions<IngestionOptions>()
     .BindConfiguration(IngestionOptions.SectionName)
     .ValidateOnStart();
 
+// Top-K, score floor and over-fetch for retrieval (Step 9). Defaults in RetrievalOptions;
+// Step 11 tunes them from evaluation data.
+builder.Services.AddOptions<RetrievalOptions>()
+    .BindConfiguration(RetrievalOptions.SectionName)
+    .ValidateOnStart();
+
 // Throws at startup if the connection string is missing, which is deliberate: a
 // misconfiguration found by a user is a misconfiguration found too late.
 //
@@ -169,6 +176,7 @@ app.UseAuthorization();
 app.MapHealthEndpoints();
 app.MapDocumentEndpoints();
 app.MapConversationEndpoints();
+app.MapRetrievalEndpoints();
 
 await app.RunAsync();
 

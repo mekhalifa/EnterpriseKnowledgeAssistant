@@ -3,40 +3,43 @@
 Single source of truth for project state. Updated at the end of every working session.
 
 **Last updated:** 2026-11-16
-**Current step:** Step 8 complete → Step 9 next
-**Overall:** Phase B complete, 8 of 14 steps done
-**Branch:** `step-08-chunking-embeddings` (branched from `step-07-document-ingestion`; none merged to `main`)
+**Current step:** Step 9 complete → Step 10 next
+**Overall:** Phase C in progress, 9 of 14 steps done
+**Branch:** `step-09-retrieval-acl` (branched from `step-08-chunking-embeddings`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**Step 9 — Vector retrieval with ACL filtering.**
-Exit criterion: *queries return relevant chunks and never content outside the caller's
-access scope.*
+**Step 10 — RAG answer generation with citations.**
+Exit criterion: *answers carry verifiable citations; unanswerable questions are refused
+rather than fabricated.*
 
 **Decisions needed first:**
 
 | Decision | Options |
 |---|---|
-| ACL model | Tenant-only for now vs a `DocumentAcl` (users/groups per document) carried into the Qdrant payload and re-checked in SQL |
-| Hybrid search | Dense-only first (recommended), BM25/sparse only if Step 11 shows a gap |
-| Retrieval contract | Top-K and score threshold as configuration vs per request; what a "no evidence" result looks like to Step 10 |
+| Refusal mechanism | Short-circuit with no model call when retrieval is empty (cheap, deterministic) vs always ask the model with an instruction to refuse (handles "retrieved but irrelevant") — likely both |
+| Citation format | Model emits markers (`[1]`) mapped back to retrieved chunks vs citing every retrieved chunk regardless of use |
+| Prompt template v2 | New seeded version via migration (ADR-0019) with a context section and the trust boundary for document text |
 
 Then:
 
-1. A retrieval port and use case: embed the question (`IEmbeddingService`, same model and
-   `EmbeddingInput` conventions), search Qdrant with the tenant filter **inside the query**.
-2. Resolve hits against SQL Server by `(DocumentId, ChunkIndex)`: only `Completed` documents,
-   same tenant re-checked (ADR-0025). Orphan points must never surface.
-3. Score threshold and top-K; deterministic ordering for ties.
-4. Specification pattern for filters, so Step 12's access rules compose rather than branch.
-5. Tests: a two-tenant suite proving no cross-tenant hit even with identical text; a document
-   mid-re-ingestion is not returned; real-Qdrant integration tests.
+1. `AskQuestionHandler` calls `ChunkRetriever` with the caller's `AccessScope` (the slice
+   must now build one; today it takes `CallerIdentity`), before the model.
+2. `PromptBuilder` gains a bounded context section: retrieved chunks within a token budget,
+   document text clearly delimited as **untrusted data**, never instructions (`MessageRole`
+   trust boundary; prompt-injection test).
+3. Persist `Citation`s on the assistant message (document, chunk index, pages, section, score);
+   `IsUngrounded` false only when at least one citation backs the answer.
+4. Expose citations in `AskQuestionResponse` / `GetConversation`.
+5. Tests: answer with citations end to end; empty retrieval → refusal with no model call; a
+   restricted document never reaches a non-member's prompt (assert on the recorded prompt);
+   injected instructions in a document do not change behaviour.
 
-Reference: [adr/0024](adr/0024-section-aware-chunking-deterministic-point-ids.md),
-[adr/0025](adr/0025-qdrant-official-client-single-collection.md),
-[concepts/design-patterns.md](concepts/design-patterns.md) (Specification).
+Reference: [adr/0028](adr/0028-retrieval-contract.md) (empty = success),
+[adr/0019](adr/0019-prompt-templates-seeded-by-migration.md),
+[steps/step-09](steps/step-09-retrieval-acl.md) §7.
 
 ---
 
@@ -291,6 +294,44 @@ persisted messages", so they belong there. Document upload of actual bytes is St
    between pieces; a "50-token" piece was 63. Pieces are now counted with their separator.
 3. A stale "handlers arrive in Step 7" log message.
 
+#### Step 9 — Vector retrieval with access control ✅
+
+- **Exit criterion met twice:** in-process (real API + worker + SQL + Qdrant, embedding faked:
+  identical documents in two tenants, group-restricted documents, stale payloads, mid-ingestion
+  and orphan vectors) and on the real stack with **real embeddings**: relevant sections ranked
+  first (0.74–0.80), a `group:finance` document invisible to non-members (`0 vector hits` —
+  filtered inside Qdrant), tenant B's identical document resolved to its own id, an off-topic
+  question returned nothing.
+- **Document ACL** (decided with the owner: now, not Step 12): `AccessPrincipal` (`tenant`,
+  `user:<sub>`, `group:<id>`), `DocumentAccess` (non-empty, ≤50, `tenant` alone),
+  `AccessScope` from token claims. Access = same tenant ∧ keys intersect — in the domain, in
+  SQL (JSON primitive collection) and in Qdrant (`access` keyword array, indexed).
+- **Every document use case takes an `AccessScope`**: get/list/rename/reset/delete hide
+  unreadable documents (404, list count excludes them); upload of a restricted document's
+  bytes → 409 naming nothing. `PUT /api/documents/{id}/access` (payload first, then SQL).
+- **Retrieval:** `ChunkFilter` Specification (tenant ∧ access ∧ embedding model, `And` only,
+  tenant structural, exhaustive Qdrant translation); `ChunkRetriever` embeds → searches with
+  the filter inside → re-checks in SQL (`IChunkReader`: tenant, current access, Completed,
+  exact keys) → ranks deterministically. Over-fetch ×2; K 5 (max 20); floor 0.6 normalized.
+  `POST /api/search`. Qdrant Query API.
+- `groups` claim; `X-EKA-Groups` header in the development scheme.
+- Migration `DocumentAccess`: existing documents backfilled to `["tenant"]`, no default
+  constraint left.
+- **578 tests** (+28 domain, +50 application, +23 integration incl. 10 real-Qdrant search
+  tests and 11 end-to-end retrieval tests).
+- Decided: [ADR-0027](adr/0027-document-acl-canonical-keys.md) access model;
+  [ADR-0028](adr/0028-retrieval-contract.md) retrieval contract (dense-only, configured K and
+  floor, empty = success).
+
+**Found and fixed, all recorded in [step-09](steps/step-09-retrieval-acl.md):**
+
+1. **The generated migration would have locked every existing document**: EF defaulted the
+   new non-nullable column to `"[]"` — readable by nobody, and unloadable by the domain.
+   Rewritten as nullable → backfill → NOT NULL; a test migrates an old-schema row forward.
+2. An "unauthenticated" test was authenticated: the development scheme supplies a default
+   identity when headers are absent. 401 is tested with a malformed identity, as before.
+3. Single-array `InlineData` does not compile; a zero score floor no longer sends a threshold.
+
 ---
 
 ## Step checklist
@@ -305,8 +346,8 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | 6 | Prompt templates + chat API | ✅ Complete — 394 tests |
 | 7 | Document ingestion | ✅ Complete — 429 tests |
 | 8 | Chunking + embeddings | ✅ Complete — 477 tests |
-| 9 | Vector retrieval with ACL filtering | ⬜ Next |
-| 10 | RAG answer generation with citations | ⬜ Not started |
+| 9 | Vector retrieval with ACL filtering | ✅ Complete — 578 tests |
+| 10 | RAG answer generation with citations | ⬜ Next |
 | 11 | Evaluation | ⬜ Not started |
 | 12 | Security and enterprise controls | ⬜ Not started |
 | 13 | Angular 21 client | ⬜ Not started |
@@ -319,8 +360,10 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | When | Decision | Options |
 |---|---|---|
 | Before real documents | **Data processor approval** | OpenRouter sees prompts and retrieved text ([ADR-0015](adr/0015-openai-compatible-provider.md)). Fine for learning data; decide before anything sensitive is ingested |
-| Step 9 | Hybrid search | Dense-only first; add BM25 only if Step 11 shows a gap |
-| Step 9 | **ACL model** — blocking | `DocumentAcl` deliberately not built — designed with access-filtered retrieval; see the next-action block |
+| Step 11 | Hybrid search | Dense-only decided for now ([ADR-0028](adr/0028-retrieval-contract.md)); add BM25 + RRF only if the evaluation shows misses on exact terms |
+| Step 11 | Top-K and score floor | 5 / 0.6 normalized are starting values; real-stack scores of related passages were 0.62–0.80 |
+| Step 12 | Who may change a document's access | Today anyone who can read it ([ADR-0027](adr/0027-document-acl-canonical-keys.md)); roles (owner / admin) with the identity provider |
+| Step 12 | Grants table vs JSON column | JSON column suffices until an admin report needs "everything group X can read" |
 | Step 11 | Chunk size and algorithm | 500/75 section-aware is a starting point; compare against semantic or parent/child with evidence ([ADR-0024](adr/0024-section-aware-chunking-deterministic-point-ids.md)) |
 | Step 11 | Persist the prompt template version on each answer | Reported in `AskQuestionResponse` today, not stored; evaluation will need it ([ADR-0019](adr/0019-prompt-templates-seeded-by-migration.md)) |
 | Step 12 | Identity provider | Entra ID vs Keycloak vs ASP.NET Core Identity |
@@ -335,9 +378,10 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 
 | Risk | Why it matters | Mitigation |
 |---|---|---|
-| ACL leak through retrieval | The worst failure mode — one user reading another's documents | Tenant filter inside every repository method (ADR-0009); **proved across HTTP in Step 4** by two-tenant end-to-end tests; vector-query filtering in Step 9; security tests in Step 12 |
-| Embedding dimension change | Forces a full re-index | Model recorded per chunk; the adapter refuses vectors of another size for an existing collection (Step 8). Re-index = new collection name + re-ingest |
-| Cross-tenant vector query | Qdrant isolation is a payload filter, not a boundary | Every port method takes the tenant; deletes/counts filter tenant **and** document (tested); Step 9 re-checks hits in SQL |
+| ACL leak through retrieval | The worst failure mode — one user reading another's documents | Tenant + access filter inside the vector query and inside SQL, independently written; SQL re-check decides (Step 9, proved end to end incl. stale payloads); security tests in Step 12 |
+| Embedding dimension change | Forces a full re-index | Model recorded per chunk; the adapter refuses vectors of another size (Step 8); searches filter on `embedding_model`, so a same-size model swap cannot mix spaces (Step 9) |
+| Cross-tenant vector query | Qdrant isolation is a payload filter, not a boundary | A search filter without a tenant is refused before I/O; every hit re-checked in SQL; proved with identical documents in two tenants (Step 9) |
+| Access-payload drift | The Qdrant copy of access keys can lag SQL | Fails closed (SQL re-check); "dropped by the SQL re-check" logged per search; reconciliation job if it stays above zero |
 | Prompt injection via document content | Uploaded documents are untrusted input | `MessageRole` is a trust boundary; tested in Step 10 |
 | Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer, client errors never retried (Step 5, tested); token budgets, caching, rate limits in Step 12 |
 | Third-party data path | OpenRouter sits between us and the model vendor | Learning data only until the decision above is made; switching to OpenAI direct or Azure is configuration (ADR-0015) |
@@ -357,6 +401,7 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 | Same bytes registered once per tenant | `UX_Documents_TenantId_ContentHash` + lookup in `UploadDocumentHandler` | ✅ Both halves; race proved closed by 8 concurrent uploads (Step 7) |
 | One local user per identity per tenant | `UX_Users_TenantId_ExternalId` | ✅ Created and tested (Step 6; replaced the global index) |
 | One vector per chunk, however often written | Point id derived from (DocumentId, ChunkIndex) in `QdrantVectorStore` | ✅ Tested against real Qdrant (Step 8) |
+| A document's access list is never missing | `Documents.Access` NOT NULL, **no default**; pre-Step-9 rows backfilled to `["tenant"]` | ✅ Migration tested from the old schema (Step 9) |
 
 ---
 
@@ -402,7 +447,21 @@ persisted messages", so they belong there. Document upload of actual bytes is St
   rule is unreachable over HTTP. It throws `DomainException` (500), not
   `InvalidStateTransitionException` (409) — fix before an archive endpoint ships.
 - **No answer citations yet.** Every answer is `IsUngrounded`; v1's instruction says so to
-  the model. Retrieval is Steps 9–10.
+  the model. Retrieval exists (Step 9); the chat flow does not call it until Step 10.
+- **Anyone who can read a document can change its access** — including restricting it so
+  they lose access themselves. Roles arrive in Step 12 ([ADR-0027](adr/0027-document-acl-canonical-keys.md)).
+- **An access change during ingestion can leave later batches with the old keys.** Narrowing
+  is caught by the SQL re-check; widening leaves the document partly hidden until access is
+  set again (the PUT is idempotent).
+- **Vectors written before Step 9 have no `access` field** and are excluded from search (fails
+  closed) until the document is re-ingested or its access is set. The `access` and
+  `embedding_model` payload indexes are created on the next write by a freshly started worker.
+- **Uploading the bytes of a document you cannot read returns 409**, which confirms the bytes
+  exist in the tenant (names nothing). The cost of the per-tenant idempotency index.
+- **Groups overage** (Entra sends a Graph pointer instead of >200 groups) yields no groups:
+  less access, never more. Resolved with the identity provider in Step 12.
+- **A Qdrant outage during search is a 500**, not a mapped 503; uploads and the rest of the API
+  are unaffected.
 - **`ListAsync` uses offset paging**, so a deep page scans and discards, and an insert
   between two requests can shift a row across a page boundary. Correct for a page-numbered
   UI; revisit if a tenant's document count reaches the thousands.
@@ -417,7 +476,6 @@ persisted messages", so they belong there. Document upload of actual bytes is St
   identity until Step 12.
 - Architecture tests use `Assembly.GetReferencedAssemblies()`, which the compiler trims to
   references compiled code actually uses.
-- `DocumentAcl` / document-level permissions are not modelled — Step 9.
 - **`AIProvider` rows are not read yet.** The active provider comes from the `Ai`
   configuration section; the `AIProviders` table and `IAIProviderRepository` are unused.
   Reconciling the two (or dropping the table) is a decision for Step 12's admin surface.

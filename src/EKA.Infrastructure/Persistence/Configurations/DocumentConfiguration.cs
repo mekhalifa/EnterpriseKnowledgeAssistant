@@ -89,6 +89,22 @@ internal sealed class DocumentConfiguration : IEntityTypeConfiguration<Document>
 
         builder.Navigation(document => document.File).IsRequired();
 
+        // ── Access (Step 9, ADR-0027): the canonical keys as a primitive collection, which EF
+        //    Core stores as a JSON array in one column and can still query element by element
+        //    (OPENJSON). That is what lets the list and the retrieval re-check apply access
+        //    inside SQL, so a page count never includes a document the caller cannot see.
+        //    One column rather than a child table: the list is small, always read whole, and
+        //    never queried on its own. A grants table wins once someone needs "every document
+        //    group hr can read" as a fast query (an admin report, Step 12).
+        builder.PrimitiveCollection(document => document.AccessKeys)
+            .HasField("_accessKeys")
+            .UsePropertyAccessMode(PropertyAccessMode.Field)
+            .HasColumnName("Access")
+            .IsRequired();
+
+        // Typed view over AccessKeys, computed on read. Not a column.
+        builder.Ignore(document => document.Access);
+
         // ── Chunks: the aggregate's children. Cascade delete because a chunk has no
         //    meaning without its document.
         builder.HasMany(document => document.Chunks)

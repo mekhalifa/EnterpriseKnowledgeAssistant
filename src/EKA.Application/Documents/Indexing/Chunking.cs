@@ -330,4 +330,28 @@ public static class EmbeddingInput
 
         return $"{heading}\n\n{chunk.Content}";
     }
+
+    /// <summary>
+    /// The text embedded for a search question (Step 9): the question, trimmed, and nothing
+    /// else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asymmetric with <see cref="For(Document, DocumentChunk)"/> on purpose. The title and
+    /// heading give a <i>passage</i> the context it lacks; a question already says what it is
+    /// about, and prefixing anything would pull every query vector toward the same made-up
+    /// heading.
+    /// </para>
+    /// <para>
+    /// Here, next to the passage format, because the two are one decision. Models trained with
+    /// instructions (E5, BGE, Nomic) expect <c>"query: "</c> and <c>"passage: "</c> prefixes, and
+    /// switching to one means changing both functions together, then re-embedding everything.
+    /// </para>
+    /// </remarks>
+    public static string ForQuery(string question)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(question);
+
+        return question.Trim();
+    }
 }

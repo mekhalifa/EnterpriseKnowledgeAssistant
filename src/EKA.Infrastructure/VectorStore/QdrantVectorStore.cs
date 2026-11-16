@@ -3,7 +3,10 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using EKA.Application.Abstractions.Ingestion;
+using EKA.Application.Retrieval;
 using EKA.Domain.Common;
+using EKA.Domain.Ingestion;
+using EKA.Domain.Retrieval;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -62,6 +65,11 @@ internal sealed partial class QdrantVectorStore(
 {
     internal const string TenantField = "tenant_id";
     internal const string DocumentField = "document_id";
+    internal const string ChunkIndexField = "chunk_index";
+    internal const string ModelField = "embedding_model";
+
+    /// <summary>The document's access keys, an array of keywords (Step 9, ADR-0027).</summary>
+    internal const string AccessField = "access";
 
     private readonly string _collection = options.Value.CollectionName;
     private readonly SemaphoreSlim _ensureGate = new(1, 1);
@@ -112,6 +120,89 @@ internal sealed partial class QdrantVectorStore(
         }
     }
 
+    public async Task<IReadOnlyList<VectorHit>> SearchAsync(
+        ReadOnlyMemory<float> query,
+        ChunkFilter filter,
+        int limit,
+        SimilarityScore minimumScore,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+
+        // Translated before any I/O, so a filter without a tenant fails even when Qdrant is down.
+        var qdrantFilter = QdrantFilterTranslator.Translate(filter);
+
+        IReadOnlyList<ScoredPoint> points;
+        try
+        {
+            // The Query API (Qdrant 1.10+), which supersedes Search. The filter is part of the
+            // query: Qdrant walks the HNSW graph only through points that satisfy it (and, for
+            // a filter this selective, uses the tenant index to plan the walk), so "the 10
+            // nearest" means the caller's 10 nearest.
+            points = await client.QueryAsync(
+                    _collection,
+                    query: query.ToArray(),
+                    filter: qdrantFilter,
+                    // Qdrant scores cosine collections in raw cosine similarity (-1..1); the
+                    // threshold is converted from the normalized scale the application uses.
+                    // No threshold at 0: "everything" should not depend on whether cosine -1
+                    // rounds to -1.0000001 in single precision.
+                    scoreThreshold: minimumScore.Value > 0 ? (float)ToCosine(minimumScore) : null,
+                    limit: (ulong)limit,
+                    payloadSelector: new WithPayloadSelector
+                    {
+                        Include = new PayloadIncludeSelector { Fields = { DocumentField, ChunkIndexField } },
+                    },
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (RpcException exception) when (exception.StatusCode is StatusCode.NotFound)
+        {
+            // No collection: nothing has ever been indexed, so nothing can match.
+            return [];
+        }
+
+        return [.. points.Select(ToHit)];
+    }
+
+    public async Task SetDocumentAccessAsync(
+        TenantId tenantId,
+        Guid documentId,
+        IReadOnlyList<string> accessKeys,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(accessKeys);
+
+        try
+        {
+            // SetPayload replaces the named key and leaves the rest of the payload alone. By
+            // filter, so one call covers every chunk, however many. wait: true, because the
+            // caller saves the new access to SQL straight after and must not run ahead of it.
+            await client.SetPayloadAsync(
+                    _collection,
+                    new Dictionary<string, Value> { [AccessField] = accessKeys.ToArray() },
+                    DocumentFilter(tenantId, documentId),
+                    wait: true,
+                    cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (RpcException exception) when (exception.StatusCode is StatusCode.NotFound)
+        {
+            // No collection yet: no vectors to update. The worker writes the current keys
+            // with every vector it stores.
+        }
+    }
+
+    /// <summary>The application's 0..1 score back to raw cosine: the inverse of <see cref="SimilarityScore.FromCosineSimilarity"/>.</summary>
+    internal static double ToCosine(SimilarityScore score) => (score.Value * 2d) - 1d;
+
+    private static VectorHit ToHit(ScoredPoint point) =>
+        new(
+            Guid.Parse(point.Payload[DocumentField].StringValue),
+            new ChunkIndex(checked((int)point.Payload[ChunkIndexField].IntegerValue)),
+            SimilarityScore.FromCosineSimilarity(point.Score));
+
     /// <summary>
     /// The point id for a chunk: a UUID derived from <c>(DocumentId, ChunkIndex)</c>.
     /// </summary>
@@ -153,8 +244,9 @@ internal sealed partial class QdrantVectorStore(
             {
                 [TenantField] = vector.TenantId.Value.ToString(),
                 [DocumentField] = vector.DocumentId.ToString(),
-                ["chunk_index"] = vector.ChunkIndex.Value,
-                ["embedding_model"] = vector.EmbeddingModel,
+                [ChunkIndexField] = vector.ChunkIndex.Value,
+                [ModelField] = vector.EmbeddingModel,
+                [AccessField] = vector.AccessKeys.ToArray(),
             },
         };
 
@@ -253,6 +345,20 @@ internal sealed partial class QdrantVectorStore(
         await client.CreatePayloadIndexAsync(
             _collection,
             DocumentField,
+            PayloadSchemaType.Keyword,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        // Step 9 searches filter on both. Without an index Qdrant still filters correctly, but
+        // by reading every candidate's payload, which grows with the collection.
+        await client.CreatePayloadIndexAsync(
+            _collection,
+            AccessField,
+            PayloadSchemaType.Keyword,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        await client.CreatePayloadIndexAsync(
+            _collection,
+            ModelField,
             PayloadSchemaType.Keyword,
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }

@@ -1,3 +1,4 @@
+using EKA.Domain.Access;
 using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
 
@@ -25,6 +26,13 @@ internal static class TestData
 
     public static string HashOf(char filler) => new(filler, 64);
 
+    /// <summary>
+    /// A caller in <paramref name="tenantId"/> (default <see cref="Tenant"/>), as the API builds
+    /// one from a token. Every tenant-wide document is readable to it.
+    /// </summary>
+    public static AccessScope Caller(TenantId? tenantId = null, string subject = "alice", params string[] groups) =>
+        AccessScope.For(tenantId ?? Tenant, subject, groups);
+
     public static FileMetadata File(string? contentHash = null) =>
         new("policy.pdf", "application/pdf", 1024, contentHash ?? Hash);
 
@@ -33,7 +41,8 @@ internal static class TestData
         Guid? id = null,
         string title = "Employee handbook",
         string? contentHash = null,
-        DateTimeOffset? createdAt = null)
+        DateTimeOffset? createdAt = null,
+        DocumentAccess? access = null)
     {
         var documentId = id ?? Guid.CreateVersion7();
 
@@ -43,8 +52,38 @@ internal static class TestData
             new DocumentTitle(title),
             File(contentHash),
             $"{(tenantId ?? Tenant).Value:N}/{documentId:N}.pdf",
-            createdAt ?? Fakes.FixedTimeProvider.DefaultNow);
+            createdAt ?? Fakes.FixedTimeProvider.DefaultNow,
+            access: access);
     }
+
+    /// <summary>
+    /// A searchable document: driven through the real lifecycle to Completed, one chunk per
+    /// text, every chunk recorded as embedded with <paramref name="model"/>.
+    /// </summary>
+    public static Document Completed(
+        TenantId? tenantId = null,
+        DocumentAccess? access = null,
+        string model = "test-model",
+        params string[] chunkTexts)
+    {
+        var document = Document(tenantId, access: access);
+        var at = Fakes.FixedTimeProvider.DefaultNow;
+        var texts = chunkTexts.Length == 0 ? ["Annual leave is 25 days."] : chunkTexts;
+
+        document.BeginExtraction(at);
+        document.CompleteExtraction(at);
+        document.AddChunks(
+            texts.Select((text, i) => new DocumentChunk(Guid.CreateVersion7(), document.Id, new ChunkIndex(i), text, new TokenCount(10), at, sectionPath: "Leave")),
+            at);
+        document.RecordEmbeddings(document.Chunks.Select(chunk => chunk.Index), model, at);
+        document.CompleteIngestion(at);
+
+        return document;
+    }
+
+    /// <summary>A document readable only by the given principals, e.g. <c>Restricted("group:hr")</c>.</summary>
+    public static Document Restricted(params string[] principalKeys) =>
+        Document(access: DocumentAccess.Of(principalKeys.Select(AccessPrincipal.Parse)));
 
     /// <summary>
     /// A document that has been through extraction and failed, so it is eligible for reset.

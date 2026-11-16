@@ -32,6 +32,19 @@ internal static class DocumentErrors
         "document.not_found",
         $"No document with id {documentId} was found.");
 
+    /// <summary>
+    /// The uploaded bytes are already a document in this tenant, and the caller may not read
+    /// it. Deliberately says nothing about which document.
+    /// </summary>
+    public static readonly Error DuplicateNotAccessible = Error.Conflict(
+        "document.duplicate_not_accessible",
+        "A document with identical contents already exists in this tenant, and you do not have access to it.");
+
+    /// <summary>The access list in a request is not one the domain accepts.</summary>
+    public static Error InvalidAccess(string reason) => Error.Validation(
+        "document.invalid_access",
+        reason);
+
     public static Error PageOutOfRange(int page) => Error.Validation(
         "document.page_out_of_range",
         $"Page must be 1 or greater; got {page}.");

@@ -30,5 +30,12 @@ public interface ICurrentUser
     /// <summary>The caller's display name as the identity provider asserts it, if it does.</summary>
     string? DisplayName => null;
 
+    /// <summary>
+    /// The groups the identity provider says the caller belongs to (Entra ID's <c>groups</c>
+    /// claim). Decides which restricted documents they may read (Step 9).
+    /// </summary>
+    /// <remarks>Empty by default: a service identity belongs to no group.</remarks>
+    IReadOnlyList<string> Groups => [];
+
     bool IsAuthenticated => SubjectId is not null;
 }

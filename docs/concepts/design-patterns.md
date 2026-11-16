@@ -318,6 +318,20 @@ var filter = Spec.Tenant(user.TenantId)
 under test, and the retrieval query cannot be built without composing it. The pattern is
 often over-used for ordinary queries — we restrict it to this one high-stakes path.
 
+**As built in Step 9** (`EKA.Application/Retrieval/ChunkFilter.cs`):
+
+```csharp
+var filter = ChunkFilter.InTenant(caller.TenantId)
+    .And(ChunkFilter.GrantedToAnyOf(caller.Keys))      // tenant, user:<sub>, group:<g>…
+    .And(ChunkFilter.EmbeddedWith(embeddings.Model));
+```
+
+Two interpretations of the same objects: `IsSatisfiedBy` in memory (fakes, tests) and
+`QdrantFilterTranslator` into a Qdrant filter. The algebra has `And` only, because an `Or`
+at the top could widen a search past the tenant. The adapter refuses a filter with no
+tenant (`PinnedTenant`). Status is deliberately *not* a condition here: it lives in SQL, and
+the SQL re-check is written independently (ADR-0027).
+
 ---
 
 ## Domain Events

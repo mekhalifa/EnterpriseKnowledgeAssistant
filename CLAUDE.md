@@ -105,6 +105,8 @@ dotnet test                         # all tests; integration needs Docker runnin
 # header read by a Development-only authentication scheme (ADR-0014). Omit the header and
 # a configured default tenant is used.
 curl http://localhost:5000/api/documents -H "X-EKA-Tenant: 11111111-1111-1111-1111-111111111111"
+# Since Step 9: X-EKA-Subject and X-EKA-Groups (comma-separated) decide document access (ADR-0027).
+curl -X POST http://localhost:5000/api/search -H "Content-Type: application/json" -H "X-EKA-Groups: hr" -d '{"query":"How many days of leave?"}'
 dotnet tool restore                 # restore dotnet-ef, pinned in .config/dotnet-tools.json
 
 # AI provider key (OpenRouter by default, ADR-0015). Never in appsettings.json.

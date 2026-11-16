@@ -74,7 +74,7 @@ public sealed class ListDocumentsHandler(IDocumentRepository documents)
 
         var page = await documents
             .ListAsync(
-                query.TenantId,
+                query.Caller,
                 status,
                 skip: (query.Page - 1) * pageSize,
                 take: pageSize,

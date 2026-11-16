@@ -1,5 +1,6 @@
 using EKA.Application.Abstractions;
 using EKA.Application.Common;
+using EKA.Domain.Access;
 using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
 
@@ -97,14 +98,15 @@ internal sealed class FakeDocumentRepository : IDocumentRepository
                 document => document.TenantId == tenantId && document.Status == status)]);
 
     public Task<PagedResult<Document>> ListAsync(
-        TenantId tenantId,
+        AccessScope caller,
         IngestionStatus? status,
         int skip,
         int take,
         CancellationToken cancellationToken = default)
     {
+        // The domain's own rule, which the SQL implementation re-expresses in its WHERE clause.
         var matching = _documents
-            .Where(document => document.TenantId == tenantId)
+            .Where(document => document.IsAccessibleTo(caller))
             .Where(document => status is null || document.Status == status)
             .ToList();
 

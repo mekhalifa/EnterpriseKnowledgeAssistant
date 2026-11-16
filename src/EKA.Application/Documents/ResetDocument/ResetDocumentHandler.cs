@@ -50,10 +50,10 @@ public sealed class ResetDocumentHandler(
         // loaded cannot be cleared — EF would leave the old rows behind and the retry
         // would index the document twice.
         var document = await documents
-            .GetWithChunksAsync(command.TenantId, command.DocumentId, cancellationToken)
+            .GetWithChunksAsync(command.Caller.TenantId, command.DocumentId, cancellationToken)
             .ConfigureAwait(false);
 
-        if (document is null)
+        if (document is null || !document.IsAccessibleTo(command.Caller))
         {
             return DocumentErrors.NotFound(command.DocumentId);
         }

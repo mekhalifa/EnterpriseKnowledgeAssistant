@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Shouldly;
 
 namespace EKA.IntegrationTests.Persistence;
@@ -129,6 +130,43 @@ public sealed class SchemaMigrationTests
             """);
 
         dataType.ShouldBe("char(64)");
+    }
+
+    [Fact]
+    public async Task Documents_that_existed_before_access_control_become_tenant_wide_not_locked()
+    {
+        // EF Core generated a default of '[]' for the new column, which would have given every
+        // existing document an empty access list: readable by nobody (step-09). This migrates a
+        // fresh database to just before the change, inserts a document the old way, and
+        // migrates forward.
+        var connectionString = await _fixture.CreateEmptyDatabaseAsync($"eka_access_{Guid.NewGuid():N}");
+        await using var context = _fixture.CreateContext(connectionStringOverride: connectionString);
+        var migrator = context.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>();
+        await migrator.MigrateAsync("20261115085809_DocumentUploadAndIngestion");
+
+        var id = Guid.NewGuid();
+        await context.Database.ExecuteSqlAsync($"""
+            INSERT INTO [Documents] ([Id], [TenantId], [Title], [StorageKey], [Status], [Authority], [ChunkCount],
+                                     [FailureCount], [CreatedAt], [FileName], [ContentType], [FileSizeBytes], [ContentHash])
+            VALUES ({id}, {Guid.NewGuid()}, N'Old handbook', N'k', 50, 50, 1, 0, SYSDATETIMEOFFSET(),
+                    N'old.pdf', N'application/pdf', 10, {new string('a', 64)})
+            """);
+
+        await migrator.MigrateAsync();
+
+        (await ScalarAsync<string>(context, "SELECT [Access] FROM [Documents] WHERE [Id] = @id", ("@id", id)))
+            .ShouldBe("""["tenant"]""");
+
+        // And no default constraint survives: an insert that forgets the column must fail
+        // rather than silently become readable by the whole tenant.
+        (await ScalarAsync<int?>(
+                context,
+                """
+                SELECT 1 FROM sys.default_constraints dc
+                JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+                WHERE OBJECT_NAME(dc.parent_object_id) = 'Documents' AND c.name = 'Access'
+                """))
+            .ShouldBeNull();
     }
 
     private static async Task<bool> TableExistsAsync(DbContext context, string tableName)

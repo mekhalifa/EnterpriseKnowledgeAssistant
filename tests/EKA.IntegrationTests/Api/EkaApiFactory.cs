@@ -36,7 +36,8 @@ namespace EKA.IntegrationTests.Api;
 internal sealed class EkaApiFactory(
     string connectionString,
     IReadOnlyDictionary<string, string?>? settings = null,
-    Uri? vectorStore = null) : WebApplicationFactory<Program>
+    Uri? vectorStore = null,
+    IEmbeddingService? embeddings = null) : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -84,7 +85,16 @@ internal sealed class EkaApiFactory(
         // because a test that depends on what a model says is a test that flakes. The real
         // adapter is proven separately by EKA.AI.Tests' smoke tests.
         builder.ConfigureTestServices(services =>
-            services.Replace(ServiceDescriptor.Singleton<IChatCompletionService>(Chat)));
+        {
+            services.Replace(ServiceDescriptor.Singleton<IChatCompletionService>(Chat));
+
+            // Step 9: the API embeds search questions. Retrieval tests hand it the same
+            // stand-in the worker embeds chunks with, so both sides share one vector space.
+            if (embeddings is not null)
+            {
+                services.Replace(ServiceDescriptor.Singleton(embeddings));
+            }
+        });
     }
 
     /// <summary>
@@ -95,12 +105,16 @@ internal sealed class EkaApiFactory(
     /// single fixed tenant: two clients, two tenants, one server — which is what the
     /// isolation tests need and a hard-coded tenant could not express.
     /// </remarks>
-    public HttpClient CreateClientFor(Guid tenantId, string subjectId = "test-user")
+    public HttpClient CreateClientFor(Guid tenantId, string subjectId = "test-user", params string[] groups)
     {
         var client = CreateClient();
 
         client.DefaultRequestHeaders.Add("X-EKA-Tenant", tenantId.ToString());
         client.DefaultRequestHeaders.Add("X-EKA-Subject", subjectId);
+        if (groups.Length > 0)
+        {
+            client.DefaultRequestHeaders.Add("X-EKA-Groups", string.Join(',', groups));
+        }
         client.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/json"));
 

@@ -172,6 +172,11 @@ namespace EKA.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.PrimitiveCollection<string>("AccessKeys")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("Access");
+
                     b.Property<int>("Authority")
                         .HasColumnType("int");
 

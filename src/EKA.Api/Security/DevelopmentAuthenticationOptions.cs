@@ -50,6 +50,12 @@ public sealed class DevelopmentAuthenticationOptions
     public const string SubjectHeader = "X-EKA-Subject";
 
     /// <summary>
+    /// Header carrying the caller's group ids, comma-separated (<c>hr,finance</c>). Absent means
+    /// no groups. Step 9: lets the access tests play callers in and out of a group.
+    /// </summary>
+    public const string GroupsHeader = "X-EKA-Groups";
+
+    /// <summary>
     /// Off unless something deliberately turns it on. A security control whose default is
     /// "on" is a security control that will one day be on somewhere nobody meant.
     /// </summary>

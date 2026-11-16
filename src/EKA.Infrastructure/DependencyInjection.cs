@@ -1,5 +1,6 @@
 using EKA.Application.Abstractions;
 using EKA.Application.Abstractions.Ingestion;
+using EKA.Application.Abstractions.Retrieval;
 using EKA.Infrastructure.Extraction;
 using EKA.Infrastructure.Jobs;
 using EKA.Infrastructure.Storage;
@@ -104,6 +105,7 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IPromptTemplateRepository, PromptTemplateRepository>();
         services.AddScoped<IAIProviderRepository, AIProviderRepository>();
+        services.AddScoped<IChunkReader, ChunkReader>();
 
         AddIngestion(services, configuration, connectionString);
         AddVectorStore(services, configuration);

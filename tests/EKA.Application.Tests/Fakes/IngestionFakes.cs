@@ -1,7 +1,9 @@
 using EKA.Application.Abstractions.AI;
 using EKA.Application.Abstractions.Ingestion;
 using EKA.Application.Common;
+using EKA.Application.Retrieval;
 using EKA.Domain.Common;
+using EKA.Domain.Retrieval;
 
 namespace EKA.Application.Tests.Fakes;
 
@@ -141,6 +143,64 @@ internal sealed class FakeVectorStore : IVectorStore
         }
     }
 
+    /// <summary>The filters searches were given, for assertions about what was asked.</summary>
+    public List<ChunkFilter> SearchFilters { get; } = [];
+
+    /// <summary>
+    /// Exact cosine search with the filter evaluated in memory (<see cref="ChunkFilter.IsSatisfiedBy"/>),
+    /// and the real adapter's refusal of a filter without a tenant.
+    /// </summary>
+    public Task<IReadOnlyList<VectorHit>> SearchAsync(
+        ReadOnlyMemory<float> query,
+        ChunkFilter filter,
+        int limit,
+        SimilarityScore minimumScore,
+        CancellationToken cancellationToken = default)
+    {
+        if (filter.PinnedTenant is null)
+        {
+            throw new ArgumentException("A vector search must be restricted to one tenant.", nameof(filter));
+        }
+
+        lock (_gate)
+        {
+            SearchFilters.Add(filter);
+
+            IReadOnlyList<VectorHit> hits =
+            [
+                .. _points.Values
+                    .Where(filter.IsSatisfiedBy)
+                    .Select(point => new VectorHit(point.DocumentId, point.ChunkIndex, SimilarityScore.FromCosineSimilarity(Cosine(query.Span, point.Vector.Span))))
+                    .Where(hit => hit.Score >= minimumScore)
+                    .OrderByDescending(hit => hit.Score)
+                    .Take(limit),
+            ];
+
+            return Task.FromResult(hits);
+        }
+    }
+
+    public Task SetDocumentAccessAsync(TenantId tenantId, Guid documentId, IReadOnlyList<string> accessKeys, CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            if (FailAccessUpdate)
+            {
+                throw new IOException("vector store unreachable");
+            }
+
+            foreach (var (key, point) in _points.Where(p => p.Key.DocumentId == documentId && p.Value.TenantId == tenantId).ToList())
+            {
+                _points[key] = point with { AccessKeys = [.. accessKeys] };
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>When set, <see cref="SetDocumentAccessAsync"/> throws, as an unreachable store would.</summary>
+    public bool FailAccessUpdate { get; set; }
+
     /// <summary>Puts a point in directly, as an earlier run would have left it.</summary>
     public void Seed(ChunkVector vector)
     {
@@ -148,6 +208,19 @@ internal sealed class FakeVectorStore : IVectorStore
         {
             _points[(vector.DocumentId, vector.ChunkIndex.Value)] = vector;
         }
+    }
+
+    private static double Cosine(ReadOnlySpan<float> a, ReadOnlySpan<float> b)
+    {
+        double dot = 0, normA = 0, normB = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * b[i];
+            normA += a[i] * a[i];
+            normB += b[i] * b[i];
+        }
+
+        return normA == 0 || normB == 0 ? 0 : dot / (Math.Sqrt(normA) * Math.Sqrt(normB));
     }
 }
 

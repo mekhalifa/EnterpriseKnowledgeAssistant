@@ -1,3 +1,4 @@
+using EKA.Domain.Access;
 using EKA.Domain.Common;
 
 namespace EKA.Domain.Ingestion;
@@ -33,6 +34,12 @@ public sealed class Document : EntityAudit<Guid>
 {
     private readonly List<DocumentChunk> _chunks = [];
 
+    /// <summary>
+    /// The canonical keys of <see cref="Access"/>. Stored as strings because that is the form
+    /// SQL and the vector store filter on (ADR-0027); <see cref="Access"/> is the typed view.
+    /// </summary>
+    private readonly List<string> _accessKeys = [];
+
     /// <summary>EF Core materialization only.</summary>
     private Document()
     {
@@ -45,7 +52,8 @@ public sealed class Document : EntityAudit<Guid>
         FileMetadata file,
         string storageKey,
         DateTimeOffset createdAt,
-        AuthorityScore? authority = null)
+        AuthorityScore? authority = null,
+        DocumentAccess? access = null)
         : base(id, createdAt)
     {
         ArgumentNullException.ThrowIfNull(title);
@@ -70,6 +78,7 @@ public sealed class Document : EntityAudit<Guid>
         StorageKey = storageKey.Trim();
         Authority = authority ?? AuthorityScore.Standard;
         Status = IngestionStatus.Pending;
+        _accessKeys.AddRange((access ?? DocumentAccess.TenantWide).Keys);
     }
 
     public TenantId TenantId { get; private set; }
@@ -105,6 +114,46 @@ public sealed class Document : EntityAudit<Guid>
 
     /// <summary>Only completed documents may be returned by retrieval.</summary>
     public bool IsSearchable => Status is IngestionStatus.Completed;
+
+    // ── Access (Step 9) ─────────────────────────────────────────────────────────────
+
+    /// <summary>The canonical principal keys, as stored and as written to the vector payload.</summary>
+    public IReadOnlyList<string> AccessKeys => _accessKeys.AsReadOnly();
+
+    /// <summary>Who may read this document.</summary>
+    public DocumentAccess Access => DocumentAccess.FromKeys(_accessKeys);
+
+    /// <summary>
+    /// The access rule, in one place: same tenant, and the caller holds a principal the
+    /// document grants.
+    /// </summary>
+    /// <remarks>
+    /// The tenant is checked here even though every repository already filters on it. This
+    /// method is the last line before content leaves, and it must not depend on how the
+    /// document was loaded. A group id is only unique inside its identity provider, so
+    /// <c>group:hr</c> in tenant A must never open a document in tenant B.
+    /// </remarks>
+    public bool IsAccessibleTo(AccessScope scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+
+        return scope.TenantId == TenantId && Access.Grants(scope);
+    }
+
+    /// <summary>Replaces who may read this document. Legal in any ingestion state.</summary>
+    /// <remarks>
+    /// The vector store keeps a copy of these keys for filtering. Keeping that copy in step is
+    /// the application's job (<c>SetDocumentAccessHandler</c>); SQL stays the authority, and
+    /// every search result is re-checked against it.
+    /// </remarks>
+    public void ChangeAccess(DocumentAccess access, DateTimeOffset at)
+    {
+        ArgumentNullException.ThrowIfNull(access);
+
+        _accessKeys.Clear();
+        _accessKeys.AddRange(access.Keys);
+        MarkModified(at);
+    }
 
     // ── Lifecycle ───────────────────────────────────────────────────────────────────
 

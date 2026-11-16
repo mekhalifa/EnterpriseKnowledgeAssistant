@@ -1,5 +1,6 @@
 using EKA.Application.Abstractions;
 using EKA.Application.Identity;
+using EKA.Domain.Access;
 using EKA.Domain.Common;
 
 namespace EKA.Api.Security;
@@ -50,6 +51,26 @@ internal static class TenantPolicy
                 + $"'{Name}' policy should have rejected the request before this point.");
 
         return new TenantId(tenantId);
+    }
+
+    /// <summary>
+    /// What the caller may read: tenant, subject and groups, all from the authenticated
+    /// principal (Step 9). Every endpoint that reads or changes a document passes this, never
+    /// the bare tenant, so the document's access list cannot be skipped by an endpoint.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No subject, on an endpoint the policy
+    /// already required authentication for. A wiring bug, loud for the reason given on
+    /// <see cref="RequireTenantId"/>.</exception>
+    public static AccessScope RequireAccessScope(this ICurrentUser currentUser)
+    {
+        ArgumentNullException.ThrowIfNull(currentUser);
+
+        var subject = currentUser.SubjectId
+            ?? throw new InvalidOperationException(
+                $"The authenticated caller has no subject claim, but the '{Name}' policy "
+                + "requires an authenticated user.");
+
+        return AccessScope.For(currentUser.RequireTenantId(), subject, currentUser.Groups);
     }
 
     /// <summary>

@@ -236,7 +236,8 @@ public sealed partial class IndexDocumentHandler(
                     result.Value.Vectors[i],
                     embeddings.Model,
                     chunk.PageRange,
-                    chunk.SectionPath))
+                    chunk.SectionPath,
+                    document.AccessKeys))
                 .ToList();
 
             await vectors.UpsertAsync(points, cancellationToken).ConfigureAwait(false);

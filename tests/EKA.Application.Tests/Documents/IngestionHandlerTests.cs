@@ -25,7 +25,7 @@ public sealed class UploadDocumentHandlerTests
         Options.Create(new IngestionOptions { MaxUploadBytes = maxBytes }), FixedTimeProvider.Default);
 
     private static UploadDocumentCommand Command(string text = "Leave policy: 25 days.", string fileName = "leave.txt", string? title = null) =>
-        new(TestData.Tenant, fileName, new MemoryStream(Encoding.UTF8.GetBytes(text)), title, Authority: null);
+        new(TestData.Caller(), fileName, new MemoryStream(Encoding.UTF8.GetBytes(text)), title, Authority: null);
 
     [Fact]
     public async Task An_upload_is_stored_recorded_and_handed_to_the_worker()
@@ -262,7 +262,7 @@ public sealed class ExtractDocumentTextHandlerTests
         _storage.Files.Count.ShouldBe(2);
 
         await new DeleteDocumentHandler(_documents, _unitOfWork, _storage, new FakeVectorStore(), NullLogger<DeleteDocumentHandler>.Instance)
-            .HandleAsync(new DeleteDocumentCommand(document.TenantId, document.Id));
+            .HandleAsync(new DeleteDocumentCommand(TestData.Caller(document.TenantId), document.Id));
 
         _storage.Files.ShouldBeEmpty();
     }

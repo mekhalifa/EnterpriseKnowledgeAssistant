@@ -269,7 +269,7 @@ public sealed class IndexDocumentHandlerTests
 
         // A reset document once had more chunks. Index 7 does not exist any more, and a
         // deterministic id alone would never overwrite it.
-        _vectors.Seed(new ChunkVector(document.TenantId, document.Id, new ChunkIndex(7), new float[4], "old-model", null, null));
+        _vectors.Seed(new ChunkVector(document.TenantId, document.Id, new ChunkIndex(7), new float[4], "old-model", null, null, ["tenant"]));
 
         await Handler().HandleAsync(For(document));
 
@@ -391,11 +391,11 @@ public sealed class DeleteDocumentVectorTests
         var document = TestData.Document();
         var neighbour = TestData.Document(contentHash: TestData.HashOf('c'));
         documents.With(document).With(neighbour);
-        vectors.Seed(new ChunkVector(document.TenantId, document.Id, new ChunkIndex(0), new float[4], "m", null, null));
-        vectors.Seed(new ChunkVector(neighbour.TenantId, neighbour.Id, new ChunkIndex(0), new float[4], "m", null, null));
+        vectors.Seed(new ChunkVector(document.TenantId, document.Id, new ChunkIndex(0), new float[4], "m", null, null, ["tenant"]));
+        vectors.Seed(new ChunkVector(neighbour.TenantId, neighbour.Id, new ChunkIndex(0), new float[4], "m", null, null, ["tenant"]));
 
         await new DeleteDocumentHandler(documents, new FakeUnitOfWork(), new FakeFileStorage(), vectors, NullLogger<DeleteDocumentHandler>.Instance)
-            .HandleAsync(new DeleteDocumentCommand(document.TenantId, document.Id));
+            .HandleAsync(new DeleteDocumentCommand(TestData.Caller(document.TenantId), document.Id));
 
         vectors.Points.ShouldHaveSingleItem().DocumentId.ShouldBe(neighbour.Id);
     }
@@ -409,7 +409,7 @@ public sealed class DeleteDocumentVectorTests
         documents.With(document);
 
         var result = await new DeleteDocumentHandler(documents, unitOfWork, new FakeFileStorage(), new UnreachableVectorStore(), NullLogger<DeleteDocumentHandler>.Instance)
-            .HandleAsync(new DeleteDocumentCommand(document.TenantId, document.Id));
+            .HandleAsync(new DeleteDocumentCommand(TestData.Caller(document.TenantId), document.Id));
 
         result.IsSuccess.ShouldBeTrue();
         documents.Removed.ShouldContain(document);
@@ -425,6 +425,12 @@ public sealed class DeleteDocumentVectorTests
             throw new IOException("unreachable");
 
         public Task<long> CountDocumentAsync(TenantId tenantId, Guid documentId, CancellationToken cancellationToken = default) =>
+            throw new IOException("unreachable");
+
+        public Task<IReadOnlyList<VectorHit>> SearchAsync(ReadOnlyMemory<float> query, EKA.Application.Retrieval.ChunkFilter filter, int limit, EKA.Domain.Retrieval.SimilarityScore minimumScore, CancellationToken cancellationToken = default) =>
+            throw new IOException("unreachable");
+
+        public Task SetDocumentAccessAsync(TenantId tenantId, Guid documentId, IReadOnlyList<string> accessKeys, CancellationToken cancellationToken = default) =>
             throw new IOException("unreachable");
     }
 }

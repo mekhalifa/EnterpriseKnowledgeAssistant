@@ -62,6 +62,21 @@ internal sealed class HttpContextCurrentUser : ICurrentUser
 
     public string? DisplayName => Claim(ClaimTypes.Name, "name");
 
+    /// <summary>
+    /// Every <c>groups</c> claim. Entra ID issues one claim per group, with the group's object id.
+    /// </summary>
+    /// <remarks>
+    /// Entra ID stops listing groups past a limit (200 in a JWT) and sends a pointer to Graph
+    /// instead: the "groups overage" claim. A caller in that situation gets no groups here, so
+    /// sees less, never more. Resolving the overage is Step 12's job, with the real provider.
+    /// </remarks>
+    public IReadOnlyList<string> Groups =>
+        _httpContextAccessor.HttpContext?.User.FindAll(GroupsClaim).Select(claim => claim.Value).ToList()
+        ?? [];
+
+    /// <summary>Claim carrying a group id, one per group.</summary>
+    internal const string GroupsClaim = "groups";
+
     private string? Claim(params string[] types)
     {
         var principal = _httpContextAccessor.HttpContext?.User;

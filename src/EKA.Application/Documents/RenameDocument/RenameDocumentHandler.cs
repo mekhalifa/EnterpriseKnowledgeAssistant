@@ -28,10 +28,10 @@ public sealed class RenameDocumentHandler(
         ArgumentNullException.ThrowIfNull(command);
 
         var document = await documents
-            .GetByIdAsync(command.TenantId, command.DocumentId, cancellationToken)
+            .GetByIdAsync(command.Caller.TenantId, command.DocumentId, cancellationToken)
             .ConfigureAwait(false);
 
-        if (document is null)
+        if (document is null || !document.IsAccessibleTo(command.Caller))
         {
             return DocumentErrors.NotFound(command.DocumentId);
         }

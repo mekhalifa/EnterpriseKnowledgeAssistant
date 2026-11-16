@@ -16,6 +16,9 @@ using EKA.Application.Documents.RecoverStalledDocuments;
 using EKA.Application.Documents.UploadDocument;
 using EKA.Application.Documents.RenameDocument;
 using EKA.Application.Documents.ResetDocument;
+using EKA.Application.Documents.SetDocumentAccess;
+using EKA.Application.Retrieval;
+using EKA.Application.Retrieval.SearchChunks;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -75,6 +78,7 @@ public static class DependencyInjection
         services.AddSingleton<IValidateOptions<ChatOptions>, ChatOptionsValidator>();
         services.AddSingleton<IValidateOptions<IngestionOptions>, IngestionOptionsValidator>();
         services.AddSingleton<IValidateOptions<IndexingOptions>, IndexingOptionsValidator>();
+        services.AddSingleton<IValidateOptions<RetrievalOptions>, RetrievalOptionsValidator>();
 
         // Pure and stateless, and needed by both hosts since Step 8: the API budgets prompts
         // with it, the worker sizes chunks with it. One counter for both means a chunk the
@@ -104,6 +108,12 @@ public static class DependencyInjection
         services.AddScoped<RenameDocumentHandler>();
         services.AddScoped<ResetDocumentHandler>();
         services.AddScoped<DeleteDocumentHandler>();
+        services.AddScoped<SetDocumentAccessHandler>();
+
+        // Retrieval (Step 9). The retriever is its own registration because Step 10's
+        // answer generation will use it too, not only the search endpoint.
+        services.AddScoped<ChunkRetriever>();
+        services.AddScoped<SearchChunksHandler>();
 
         services.AddScoped<StartConversationHandler>();
         services.AddScoped<AskQuestionHandler>();
