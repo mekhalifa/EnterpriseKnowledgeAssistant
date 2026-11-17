@@ -1,4 +1,5 @@
 using EKA.Contracts.Documents;
+using EKA.Domain.Access;
 using EKA.Domain.Ingestion;
 
 namespace EKA.Application.Documents;
@@ -25,9 +26,15 @@ namespace EKA.Application.Documents;
 /// <c>Results.Ok(document)</c> away from serialising the entity.
 /// </para>
 /// </remarks>
+/// <para>
+/// <b><c>CanManage</c> is computed for the caller (Step 13).</b> It is the aggregate's own rule
+/// (<see cref="Document.CanBeManagedBy"/>), answered for whoever asked, so the client can hide an
+/// access editor or a delete button it would only get a 403 from. It is an affordance, not a
+/// control: the handlers still check, and a client that ignores it still gets the 403.
+/// </para>
 internal static class DocumentMapping
 {
-    public static DocumentResponse ToResponse(this Document document) =>
+    public static DocumentResponse ToResponse(this Document document, AccessScope caller) =>
         new(
             document.Id,
             document.Title.Value,
@@ -45,9 +52,10 @@ internal static class DocumentMapping
             document.ModifiedAt,
             document.ExtractedAt,
             document.IngestedAt,
-            [.. document.AccessKeys]);
+            [.. document.AccessKeys],
+            document.CanBeManagedBy(caller));
 
-    public static DocumentSummaryResponse ToSummary(this Document document) =>
+    public static DocumentSummaryResponse ToSummary(this Document document, AccessScope caller) =>
         new(
             document.Id,
             document.Title.Value,
@@ -56,5 +64,6 @@ internal static class DocumentMapping
             document.File.SizeBytes,
             document.Status.ToString(),
             document.ChunkCount,
-            document.CreatedAt);
+            document.CreatedAt,
+            document.CanBeManagedBy(caller));
 }

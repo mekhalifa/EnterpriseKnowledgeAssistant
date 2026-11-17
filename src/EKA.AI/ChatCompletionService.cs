@@ -50,7 +50,7 @@ internal sealed partial class ChatCompletionService(
             throw new ArgumentException("A conversation needs at least one message.", nameof(conversation));
         }
 
-        var messages = conversation.Select(ToChatMessage).ToList();
+        var messages = ToChatMessages(conversation);
 
         ChatResponse response;
         try
@@ -67,6 +67,70 @@ internal sealed partial class ChatCompletionService(
             return error;
         }
 
+        return ToCompletion(response);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// The updates are kept and folded into one <see cref="ChatResponse"/> at the end
+    /// (<c>ToChatResponse</c>), so model id, text and usage come from exactly the same place as in
+    /// <see cref="CompleteAsync"/>. The OpenAI adapter asks for usage on the final chunk of a
+    /// stream; a provider that omits it yields null token counts, which the budget already treats
+    /// as "use the estimate".
+    /// </para>
+    /// <para>
+    /// <b>Only the provider's failures are translated.</b> The delta callback runs inside the same
+    /// <c>try</c>, but what it throws is the caller's problem (typically a client that hung up,
+    /// which arrives as cancellation) and propagates untouched — the filter checks the exception
+    /// came from the stream, not from <paramref name="onDelta"/>.
+    /// </para>
+    /// </remarks>
+    public async Task<Result<ChatCompletion>> StreamAsync(
+        IReadOnlyList<ChatTurn> conversation,
+        Func<string, CancellationToken, ValueTask> onDelta,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(conversation);
+        ArgumentNullException.ThrowIfNull(onDelta);
+
+        if (conversation.Count == 0)
+        {
+            throw new ArgumentException("A conversation needs at least one message.", nameof(conversation));
+        }
+
+        var messages = ToChatMessages(conversation);
+        var updates = new List<ChatResponseUpdate>();
+        var inCallback = false;
+
+        try
+        {
+            await foreach (var update in chatClient
+                .GetStreamingResponseAsync(messages, _requestOptions?.Clone(), cancellationToken)
+                .ConfigureAwait(false))
+            {
+                updates.Add(update);
+
+                if (update.Text is { Length: > 0 } text)
+                {
+                    inCallback = true;
+                    await onDelta(text, cancellationToken).ConfigureAwait(false);
+                    inCallback = false;
+                }
+            }
+        }
+        catch (Exception exception)
+            when (!inCallback && ProviderFailure.TryTranslate(exception, cancellationToken, out var error))
+        {
+            LogProviderFailure(logger, error.Code, exception);
+            return error;
+        }
+
+        return ToCompletion(updates.ToChatResponse());
+    }
+
+    private Result<ChatCompletion> ToCompletion(ChatResponse response)
+    {
         var text = response.Text;
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -83,6 +147,9 @@ internal sealed partial class ChatCompletionService(
             Tokens.From(response.Usage?.InputTokenCount),
             Tokens.From(response.Usage?.OutputTokenCount));
     }
+
+    private static List<ChatMessage> ToChatMessages(IReadOnlyList<ChatTurn> conversation) =>
+        [.. conversation.Select(ToChatMessage)];
 
     private static ChatMessage ToChatMessage(ChatTurn turn) => new(
         turn.Role switch

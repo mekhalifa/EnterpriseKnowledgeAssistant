@@ -1,0 +1,121 @@
+<h1 class="visually-hidden">Ask your documents</h1>
+<div class="visually-hidden" role="status" aria-live="polite">{{ store.announcement() }}</div>
+
+<div class="layout">
+  <nav class="conversations" aria-labelledby="conversations-heading">
+    <details [open]="wideScreen">
+      <summary><h2 id="conversations-heading">Conversations</h2></summary>
+      <button mat-stroked-button type="button" class="new" (click)="newConversation()">New conversation</button>
+      @if (store.conversations().length === 0) {
+        <p class="muted">Your conversations will appear here.</p>
+      } @else {
+        <ul>
+          @for (conversation of store.conversations(); track conversation.id) {
+            <li>
+              <a
+                [routerLink]="['/chat']"
+                [queryParams]="{ c: conversation.id }"
+                [attr.aria-current]="conversation.id === store.current()?.id ? 'page' : null"
+                [class.current]="conversation.id === store.current()?.id"
+              >
+                <span class="conversation-title">{{ conversation.title ?? 'Untitled conversation' }}</span>
+                <span class="muted">{{ conversation.lastActivityAt | date: 'short' }}</span>
+              </a>
+            </li>
+          }
+        </ul>
+      }
+    </details>
+  </nav>
+
+  <section class="chat" aria-labelledby="thread-heading">
+    <h2 id="thread-heading" class="visually-hidden">{{ store.current()?.title ?? 'New conversation' }}</h2>
+
+    <div class="thread" #thread data-testid="thread">
+      @if (store.loading()) {
+        <mat-progress-bar mode="indeterminate" aria-label="Loading conversation" />
+      }
+      @if (store.messages().length === 0 && !store.pending() && !store.loading()) {
+        <div class="intro">
+          <p>Ask a question about the documents you can read. Answers cite their sources; choose a number to see where it came from.</p>
+        </div>
+      }
+
+      @for (message of store.messages(); track message.id) {
+        @if (message.role === 'User') {
+          <article class="message question" aria-label="Your question">
+            <p>{{ message.content }}</p>
+          </article>
+        } @else {
+          <article class="message answer" aria-label="Answer" [attr.data-grounding]="groundingOf(message)" data-testid="answer">
+            <app-answer-text
+              [content]="message.content"
+              [citations]="message.citations"
+              [selected]="store.selection()?.messageId === message.id ? store.selection()!.number : null"
+              (cite)="store.selectCitation(message.id, $event)"
+            />
+            @if (groundingOf(message) === 'uncited') {
+              <p class="note">This answer does not cite your documents.</p>
+            }
+            @if (message.citations.length > 0) {
+              <button mat-button type="button" class="show-sources" (click)="store.selectCitation(message.id, null)">
+                Show {{ message.citations.length }} source{{ message.citations.length === 1 ? '' : 's' }}
+              </button>
+            }
+          </article>
+        }
+      }
+
+      @if (store.pending(); as turn) {
+        <article class="message question" aria-label="Your question">
+          <p>{{ turn.question }}</p>
+        </article>
+        <article class="message answer streaming" aria-label="Answer being written" aria-busy="true" data-testid="streaming-answer">
+          @if (turn.answer) {
+            <p class="streamed">{{ withoutMarkers(turn.answer) }}</p>
+          } @else {
+            <p class="muted">Searching your documents…</p>
+          }
+        </article>
+      }
+    </div>
+
+    @if (store.error(); as problem) {
+      <app-error-banner [error]="problem" (retry)="retryLast()" />
+    }
+
+    <form class="composer" (ngSubmit)="send()">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Ask a question</mat-label>
+        <textarea
+          #composer
+          matInput
+          name="question"
+          rows="2"
+          [maxlength]="maxLength"
+          [ngModel]="question()"
+          (ngModelChange)="question.set($event)"
+          (keydown)="onComposerKeydown($event)"
+          [disabled]="store.streaming()"
+          data-testid="composer"
+        ></textarea>
+        <mat-hint>Enter to send · Shift+Enter for a new line</mat-hint>
+        @if (question().length > maxLength - 500) {
+          <mat-hint align="end">{{ question().length }} / {{ maxLength }}</mat-hint>
+        }
+      </mat-form-field>
+      @if (store.streaming()) {
+        <button mat-stroked-button type="button" (click)="store.stop()">Stop</button>
+      } @else {
+        <button mat-flat-button type="submit" [disabled]="!question().trim()">Send</button>
+      }
+    </form>
+  </section>
+
+  <aside class="sources" aria-labelledby="sources-heading">
+    <app-citation-panel
+      [message]="store.citedMessage()"
+      [selected]="store.selection()?.number ?? null"
+    />
+  </aside>
+</div>

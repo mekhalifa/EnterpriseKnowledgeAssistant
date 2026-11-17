@@ -1,0 +1,58 @@
+@use '@angular/material' as mat;
+
+// Material 3 theme (Step 13). Its color roles are what the components use, and they meet WCAG
+// AA contrast for text in both schemes; custom styles use the same --mat-sys-* tokens rather than
+// hard-coded colors so they cannot drift out of contrast.
+html {
+  color-scheme: light dark;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette,
+      ),
+      typography: (
+        plain-family: (system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif),
+        brand-family: (system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif),
+      ),
+      density: 0,
+    )
+  );
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font: var(--mat-sys-body-large);
+  background: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+}
+
+// A visible focus ring on everything a keyboard can reach (WCAG 2.4.7 / 2.4.13).
+:focus-visible {
+  outline: 2px solid var(--mat-sys-primary);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+// Respect a request for less motion: no spinners or transitions racing across the screen.
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

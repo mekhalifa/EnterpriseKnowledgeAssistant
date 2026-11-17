@@ -59,6 +59,10 @@ internal static class ProviderFailure
                 ClientResultException { Status: >= 500 } => AiErrors.Unavailable,
                 ClientResultException { Status: >= 400 } => AiErrors.Rejected,
                 HttpRequestException => AiErrors.Unavailable,
+                // The connection broke while the body was being read: after the headers, so below
+                // the retry layer (which only sees the response start). Step 13's streaming made
+                // this likely: a stream is a long-lived read. HttpIOException derives from it.
+                IOException => AiErrors.Unavailable,
                 // Cancellation the caller did not ask for is a timeout somewhere below us.
                 OperationCanceledException => AiErrors.Timeout,
                 _ => null,

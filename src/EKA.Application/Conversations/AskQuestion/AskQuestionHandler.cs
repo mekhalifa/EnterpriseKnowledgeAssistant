@@ -66,9 +66,37 @@ public sealed class AskQuestionHandler(
 {
     private readonly ChatOptions _options = options.Value;
 
-    public async Task<Result<AskQuestionResponse>> HandleAsync(
+    public Task<Result<AskQuestionResponse>> HandleAsync(
         AskQuestionCommand command,
+        CancellationToken cancellationToken = default) =>
+        AskAsync(command, onAnswerDelta: null, cancellationToken);
+
+    /// <summary>
+    /// The same use case, with the model's text handed to <paramref name="onAnswerDelta"/> as it is
+    /// written (Step 13, ADR-0033).
+    /// </summary>
+    /// <remarks>
+    /// Everything else is identical, deliberately: the same checks, the same retrieval with the
+    /// caller's scope, the same atomic turn. The deltas are raw model output, with the model's own
+    /// <c>[n]</c> numbering; the returned response carries the renumbered answer and its
+    /// citations, and is the only thing persisted. If the provider fails after some deltas, the
+    /// result is that failure and nothing is saved. A no-evidence refusal produces no deltas at all,
+    /// because no model is called.
+    /// </remarks>
+    public Task<Result<AskQuestionResponse>> StreamAsync(
+        AskQuestionCommand command,
+        Func<string, CancellationToken, ValueTask> onAnswerDelta,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(onAnswerDelta);
+
+        return AskAsync(command, onAnswerDelta, cancellationToken);
+    }
+
+    private async Task<Result<AskQuestionResponse>> AskAsync(
+        AskQuestionCommand command,
+        Func<string, CancellationToken, ValueTask>? onAnswerDelta,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(command);
 
@@ -152,7 +180,9 @@ public sealed class AskQuestionHandler(
         }
         else
         {
-            var completion = await chat.CompleteAsync(prompt.Value.Turns, cancellationToken).ConfigureAwait(false);
+            var completion = onAnswerDelta is null
+                ? await chat.CompleteAsync(prompt.Value.Turns, cancellationToken).ConfigureAwait(false)
+                : await chat.StreamAsync(prompt.Value.Turns, onAnswerDelta, cancellationToken).ConfigureAwait(false);
             if (completion.IsFailure)
             {
                 // Nothing has been added to the aggregate, so there is nothing to undo.

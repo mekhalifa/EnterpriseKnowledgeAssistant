@@ -86,4 +86,29 @@ internal sealed class FakeChatCompletionService : IChatCompletionService
 
         return Task.FromResult(result);
     }
+
+    /// <summary>When set with <see cref="FailWith"/>, a stream emits this many deltas before failing:
+    /// a provider dying half-way through an answer.</summary>
+    public int DeltasBeforeFailure { get; set; }
+
+    /// <summary>Streams <see cref="Answer"/> word by word (spaces kept), or fails as configured.</summary>
+    public async Task<Result<ChatCompletion>> StreamAsync(
+        IReadOnlyList<ChatTurn> conversation,
+        Func<string, CancellationToken, ValueTask> onDelta,
+        CancellationToken cancellationToken = default)
+    {
+        Prompts.Add(conversation);
+
+        var pieces = System.Text.RegularExpressions.Regex.Split(Answer, @"(?<= )");
+        var limit = FailWith is null ? pieces.Length : Math.Min(DeltasBeforeFailure, pieces.Length);
+
+        foreach (var piece in pieces.Take(limit))
+        {
+            await onDelta(piece, cancellationToken);
+        }
+
+        return FailWith is { } error
+            ? error
+            : new ChatCompletion(Answer, "fake.provider", "fake-model", new TokenCount(50), new TokenCount(7));
+    }
 }

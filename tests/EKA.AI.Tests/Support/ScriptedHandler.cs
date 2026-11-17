@@ -48,6 +48,69 @@ internal sealed class ScriptedHandler : HttpMessageHandler
         });
     }
 
+    /// <summary>
+    /// Queue a streamed chat reply (server-sent events, as OpenAI sends them), one chunk per
+    /// delta, then usage, then <c>[DONE]</c>. With <paramref name="breakAfterDeltas"/> the
+    /// connection drops after the deltas instead: what a provider outage mid-answer looks like.
+    /// </summary>
+    public ScriptedHandler ThenStream(string[] deltas, bool breakAfterDeltas = false)
+    {
+        return Then(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new BreakingStream(Encoding.UTF8.GetBytes(ChatStream(deltas, breakAfterDeltas)), breakAfterDeltas))
+            {
+                Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/event-stream") },
+            },
+        }));
+    }
+
+    private static string ChatStream(string[] deltas, bool truncated)
+    {
+        const string Head = """{"id":"chatcmpl-test","object":"chat.completion.chunk","created":1700000000,"model":"test-chat",""";
+        var builder = new StringBuilder();
+
+        foreach (var delta in deltas)
+        {
+            var escaped = System.Text.Json.JsonSerializer.Serialize(delta);
+            builder.Append("data: ").Append(Head)
+                .Append($$"""
+                    "choices":[{"index":0,"delta":{"role":"assistant","content":{{escaped}}},"finish_reason":null}]}
+                    """)
+                .Append("\n\n");
+        }
+
+        if (!truncated)
+        {
+            builder.Append("data: ").Append(Head).Append("""
+                "choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+                """).Append("\n\n");
+            builder.Append("data: ").Append(Head).Append("""
+                "choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}
+                """).Append("\n\n");
+            builder.Append("data: [DONE]\n\n");
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>Serves its bytes, then either ends or throws as a dropped connection does.</summary>
+    private sealed class BreakingStream(byte[] content, bool breakAtEnd) : MemoryStream(content)
+    {
+        public override int Read(byte[] buffer, int offset, int count) =>
+            Guard(base.Read(buffer, offset, count));
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            Guard(await base.ReadAsync(buffer, cancellationToken));
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        private static int Guard(int read, bool breakAtEnd) =>
+            read == 0 && breakAtEnd ? throw new HttpIOException(HttpRequestError.ResponseEnded, "Connection dropped.") : read;
+
+        private int Guard(int read) => Guard(read, breakAtEnd);
+    }
+
     private ScriptedHandler Then(Func<CancellationToken, Task<HttpResponseMessage>> step)
     {
         _steps.Enqueue(step);

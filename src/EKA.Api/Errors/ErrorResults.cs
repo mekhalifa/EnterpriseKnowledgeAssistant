@@ -34,9 +34,47 @@ internal static class ErrorResults
 
     public static IResult ToProblem(this Error error)
     {
+        var (statusCode, title) = StatusFor(error);
+
+        return TypedResults.Problem(
+            detail: error.Message,
+            statusCode: statusCode,
+            title: title,
+            extensions: new Dictionary<string, object?>
+            {
+                [CodeExtension] = error.Code,
+            });
+    }
+
+    /// <summary>
+    /// The same problem document as a value, for a response that can no longer carry a status
+    /// code: the <c>error</c> event of an answer stream that has already started (Step 13).
+    /// </summary>
+    public static Microsoft.AspNetCore.Mvc.ProblemDetails ToProblemDetails(this Error error, HttpContext httpContext)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+
+        var (statusCode, title) = StatusFor(error);
+
+        return new Microsoft.AspNetCore.Mvc.ProblemDetails
+        {
+            Status = statusCode,
+            Title = title,
+            Detail = error.Message,
+            Instance = $"{httpContext.Request.Method} {httpContext.Request.Path}",
+            Extensions =
+            {
+                [CodeExtension] = error.Code,
+                ["traceId"] = httpContext.TraceIdentifier,
+            },
+        };
+    }
+
+    private static (int StatusCode, string Title) StatusFor(Error error)
+    {
         ArgumentNullException.ThrowIfNull(error);
 
-        var (statusCode, title) = error.Type switch
+        return error.Type switch
         {
             ErrorType.Validation => (StatusCodes.Status400BadRequest, "Invalid request"),
             ErrorType.NotFound => (StatusCodes.Status404NotFound, "Not found"),
@@ -59,15 +97,6 @@ internal static class ErrorResults
                 error.Type,
                 "No HTTP status is mapped for this error type."),
         };
-
-        return TypedResults.Problem(
-            detail: error.Message,
-            statusCode: statusCode,
-            title: title,
-            extensions: new Dictionary<string, object?>
-            {
-                [CodeExtension] = error.Code,
-            });
     }
 
     /// <summary>

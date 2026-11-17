@@ -26,6 +26,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
 
+// Numbers are numbers (Step 13). The web defaults also accept "5" for 5 on input, and the OpenAPI
+// generator then truthfully types every integer as `number | string` — which the generated
+// TypeScript client inherits. The server only ever writes numbers, so the strict setting makes the
+// published contract say what the API actually does. A JSON body with a quoted number is now a 400.
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict);
+
 // ── Error handling ──────────────────────────────────────────────────────────────────
 //
 // AddProblemDetails makes every unhandled failure — including the framework's own 404s
@@ -80,6 +87,9 @@ builder.Services.AddAuthorization(options =>
 
 // Per-user token buckets on the endpoints that cost money (Step 12, ADR-0032).
 builder.AddEkaRateLimiting();
+
+// The browser client's origin (Step 13). Empty unless configured: same-origin only.
+builder.AddEkaCors();
 
 // ── Application and infrastructure ──────────────────────────────────────────────────
 
@@ -144,6 +154,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Before authentication: a preflight (OPTIONS) carries no token by design, and must be answered
+// here rather than refused with 401 (Step 13).
+app.UseCors();
 
 app.UseAuthentication();
 app.UseAuthorization();

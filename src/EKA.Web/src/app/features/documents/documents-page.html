@@ -1,0 +1,104 @@
+<div class="page">
+  <h1>Documents</h1>
+
+  <div class="visually-hidden" aria-live="polite" role="status">{{ announcement() }}</div>
+
+  <section class="upload" aria-labelledby="upload-heading">
+    <h2 id="upload-heading">Upload a document</h2>
+    <div class="upload-row">
+      <mat-form-field appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Title (optional)</mat-label>
+        <input matInput [(ngModel)]="title" name="title" maxlength="300" autocomplete="off" />
+        <mat-hint>Defaults to the file name.</mat-hint>
+      </mat-form-field>
+      <input #fileInput class="visually-hidden" type="file" [accept]="accept" tabindex="-1" aria-hidden="true"
+        (change)="onFileChosen(fileInput)" data-testid="file-input" />
+      <button mat-flat-button type="button" (click)="fileInput.click()" [disabled]="upload() !== null">
+        Choose file and upload
+      </button>
+    </div>
+    <p class="formats">PDF, Word (.docx), Markdown or plain text, up to 25 MB.</p>
+
+    @if (upload(); as progress) {
+      <div class="progress">
+        <span id="upload-label">Uploading {{ progress.fileName }} — {{ progress.percent }}%</span>
+        <mat-progress-bar mode="determinate" [value]="progress.percent" aria-labelledby="upload-label" />
+      </div>
+    }
+    @if (notice(); as message) {
+      <p class="notice">{{ message }}</p>
+    }
+  </section>
+
+  @if (error(); as problem) {
+    <app-error-banner [error]="problem" (retry)="load()" />
+  }
+
+  <section aria-labelledby="list-heading">
+    <h2 id="list-heading">Your documents</h2>
+
+    @if (loading()) {
+      <mat-progress-bar mode="indeterminate" aria-label="Loading documents" />
+    } @else if (documents().length === 0) {
+      <p class="empty">No documents yet. Upload one to start asking questions about it.</p>
+    } @else {
+      <div class="table-wrap">
+        <table mat-table [dataSource]="documents()" aria-describedby="list-heading">
+          <ng-container matColumnDef="title">
+            <th mat-header-cell *matHeaderCellDef scope="col">Title</th>
+            <td mat-cell *matCellDef="let d">
+              <span class="title">{{ d.title }}</span>
+              <span class="file">{{ d.fileName }}</span>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef scope="col">Status</th>
+            <td mat-cell *matCellDef="let d">
+              <span class="status" [attr.data-status]="d.status" [attr.data-testid]="'status-' + d.id">
+                @if (isInProgress(d.status)) {
+                  <mat-progress-spinner mode="indeterminate" diameter="16" aria-hidden="true" />
+                }
+                {{ statusLabel(d.status) }}
+              </span>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="chunks">
+            <th mat-header-cell *matHeaderCellDef scope="col">Passages</th>
+            <td mat-cell *matCellDef="let d">{{ d.chunkCount }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="size">
+            <th mat-header-cell *matHeaderCellDef scope="col">Size</th>
+            <td mat-cell *matCellDef="let d">{{ d.sizeBytes / 1024 | number: '1.0-1' }} KB</td>
+          </ng-container>
+
+          <ng-container matColumnDef="created">
+            <th mat-header-cell *matHeaderCellDef scope="col">Uploaded</th>
+            <td mat-cell *matCellDef="let d">{{ d.createdAt | date: 'medium' }}</td>
+          </ng-container>
+
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef scope="col"><span class="visually-hidden">Actions</span></th>
+            <td mat-cell *matCellDef="let d" class="actions">
+              @if (d.canManage) {
+                @if (d.status === 'Failed') {
+                  <button mat-button type="button" (click)="retry(d)" [attr.aria-label]="'Retry indexing ' + d.title">Retry</button>
+                }
+                <button mat-button type="button" (click)="editAccess(d)" [attr.aria-label]="'Change who can read ' + d.title">Access</button>
+                <button mat-button type="button" class="danger" (click)="remove(d)" [attr.aria-label]="'Delete ' + d.title">Delete</button>
+              }
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="columns"></tr>
+          <tr mat-row *matRowDef="let row; columns: columns"></tr>
+        </table>
+      </div>
+
+      <mat-paginator [length]="total()" [pageIndex]="page() - 1" [pageSize]="pageSize()" [pageSizeOptions]="[10, 20, 50]"
+        (page)="onPage($event)" aria-label="Document pages" />
+    }
+  </section>
+</div>

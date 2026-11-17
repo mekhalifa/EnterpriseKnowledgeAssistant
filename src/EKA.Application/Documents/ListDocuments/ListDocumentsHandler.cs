@@ -82,7 +82,7 @@ public sealed class ListDocumentsHandler(IDocumentRepository documents)
             .ConfigureAwait(false);
 
         return new PagedResponse<DocumentSummaryResponse>(
-            [.. page.Items.Select(document => document.ToSummary())],
+            [.. page.Items.Select(document => document.ToSummary(query.Caller))],
             query.Page,
             pageSize,
             page.TotalCount);

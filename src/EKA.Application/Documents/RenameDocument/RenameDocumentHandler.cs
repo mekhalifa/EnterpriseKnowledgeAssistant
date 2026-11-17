@@ -40,6 +40,6 @@ public sealed class RenameDocumentHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        return document.ToResponse();
+        return document.ToResponse(command.Caller);
     }
 }

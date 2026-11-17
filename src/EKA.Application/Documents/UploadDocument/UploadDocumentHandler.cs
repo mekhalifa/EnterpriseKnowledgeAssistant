@@ -155,7 +155,7 @@ public sealed class UploadDocumentHandler(
             .EnqueueIngestionAsync(document.TenantId, document.Id, cancellationToken)
             .ConfigureAwait(false);
 
-        return new UploadDocumentOutcome(document.ToResponse(), AlreadyRegistered: false, queued);
+        return new UploadDocumentOutcome(document.ToResponse(command.Caller), AlreadyRegistered: false, queued);
     }
 
     /// <summary>
@@ -171,7 +171,7 @@ public sealed class UploadDocumentHandler(
     /// </remarks>
     private static Result<UploadDocumentOutcome> AlreadyRegistered(Document existing, UploadDocumentCommand command) =>
         existing.IsVisibleTo(command.Caller)
-            ? new UploadDocumentOutcome(existing.ToResponse(), AlreadyRegistered: true, Queued: false)
+            ? new UploadDocumentOutcome(existing.ToResponse(command.Caller), AlreadyRegistered: true, Queued: false)
             : DocumentErrors.DuplicateNotAccessible;
 
     /// <summary>"Leave Policy 2026.pdf" becomes "Leave Policy 2026", cut to the title limit.</summary>

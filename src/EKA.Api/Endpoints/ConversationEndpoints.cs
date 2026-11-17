@@ -1,12 +1,15 @@
 using EKA.Api.Errors;
 using EKA.Api.Filters;
 using EKA.Api.Security;
+using EKA.Api.Streaming;
 using EKA.Application.Abstractions;
 using EKA.Application.Conversations.AskQuestion;
 using EKA.Application.Conversations.GetConversation;
 using EKA.Application.Conversations.ListConversations;
 using EKA.Application.Conversations.StartConversation;
 using EKA.Contracts.Conversations;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Options;
 
 namespace EKA.Api.Endpoints;
 
@@ -64,6 +67,21 @@ internal static class ConversationEndpoints
             .ProducesProblem(StatusCodes.Status404NotFound)
             .ProducesProblem(StatusCodes.Status502BadGateway);
 
+        // Step 13: the same use case as server-sent events, so the client can show the answer as
+        // it is written. Same rate limit, same validation, same handler (ADR-0033).
+        conversations.MapPost("/{conversationId:guid}/messages/stream", AskStreamingAsync)
+            .WithName("AskQuestionStreaming")
+            .RequireRateLimiting(RateLimitingOptions.AskPolicy)
+            .WithSummary("Asks a question and streams the answer as server-sent events: "
+                + "'delta' events while the model writes, then one 'completed' (the persisted exchange) "
+                + "or 'error' (a problem document; nothing persisted).")
+            .WithValidation<AskQuestionRequest>()
+            .Produces(StatusCodes.Status200OK, contentType: ServerSentEventWriter.ContentType)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests)
+            .ProducesProblem(StatusCodes.Status502BadGateway);
+
         return app;
     }
 
@@ -118,5 +136,56 @@ internal static class ConversationEndpoints
         var result = await handler.HandleAsync(command, cancellationToken).ConfigureAwait(false);
 
         return result.Match(Results.Ok);
+    }
+
+    /// <remarks>
+    /// <para>
+    /// The response starts with the first delta (see <see cref="ServerSentEventWriter"/>). Until
+    /// then every failure is the ordinary problem response with its own status, exactly as the
+    /// non-streaming endpoint would answer. After it, a failure is an <c>error</c> event and the
+    /// client discards what it showed; the handler has persisted nothing.
+    /// </para>
+    /// <para>
+    /// A no-evidence refusal never calls the model, so it produces no deltas: the stream starts and
+    /// ends with its single <c>completed</c> event.
+    /// </para>
+    /// <para>
+    /// If the browser disconnects, the request token is cancelled, the provider call is abandoned
+    /// and nothing is persisted: the same outcome as a failed turn.
+    /// </para>
+    /// </remarks>
+    private static async Task<IResult> AskStreamingAsync(
+        Guid conversationId,
+        AskQuestionRequest request,
+        AskQuestionHandler handler,
+        ICurrentUser currentUser,
+        HttpContext httpContext,
+        IOptions<JsonOptions> jsonOptions,
+        CancellationToken cancellationToken)
+    {
+        var command = new AskQuestionCommand(currentUser.RequireCaller(), conversationId, request.Question);
+        var stream = new ServerSentEventWriter(httpContext.Response, jsonOptions.Value.SerializerOptions);
+
+        var result = await handler
+            .StreamAsync(
+                command,
+                (text, token) => stream.WriteAsync(AnswerStreamEvents.Delta, new AnswerDeltaEvent(text), token),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (result.IsFailure)
+        {
+            if (!stream.HasStarted)
+            {
+                return result.Error.ToProblem();
+            }
+
+            await stream.WriteAsync(AnswerStreamEvents.Error, result.Error.ToProblemDetails(httpContext), cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Empty;
+        }
+
+        await stream.WriteAsync(AnswerStreamEvents.Completed, result.Value, cancellationToken).ConfigureAwait(false);
+        return Results.Empty;
     }
 }

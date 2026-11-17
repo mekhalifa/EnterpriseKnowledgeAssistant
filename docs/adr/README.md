@@ -58,6 +58,7 @@ useful as the current belief.
 | [0030](0030-two-tier-evaluation-with-baselines.md) | Two-tier evaluation: recorded embeddings gate every build, a calibrated LLM judge gates billed runs | Accepted | 2026-11-16 |
 | [0031](0031-oidc-jwt-and-document-ownership.md) | OIDC access tokens from any issuer, Keycloak locally; document owners and tenant administrators | Accepted | 2026-11-16 |
 | [0032](0032-rate-limits-budgets-and-upload-hardening.md) | Per-user rate limits, per-tenant monthly token budgets, hardened uploads | Accepted | 2026-11-16 |
+| [0033](0033-angular-client-pkce-sse-generated-contract.md) | Angular client: OIDC code + PKCE, SSE answer streaming, Material, generated contract | Accepted | 2026-11-17 |
 
 ## Template
 

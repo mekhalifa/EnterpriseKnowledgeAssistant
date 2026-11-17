@@ -68,6 +68,6 @@ public sealed class ResetDocumentHandler(
         // recovers it (ADR-0020).
         await queue.EnqueueIngestionAsync(document.TenantId, document.Id, cancellationToken).ConfigureAwait(false);
 
-        return document.ToResponse();
+        return document.ToResponse(command.Caller);
     }
 }

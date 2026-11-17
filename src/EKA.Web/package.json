@@ -1,0 +1,40 @@
+{
+  "name": "eka-web",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build",
+    "test": "ng test --watch=false",
+    "test:watch": "ng test",
+    "generate:api": "openapi-typescript openapi/eka-api.json --output src/app/core/api/schema.ts --root-types --root-types-no-schema-prefix",
+    "check:api": "openapi-typescript openapi/eka-api.json --output src/app/core/api/schema.ts --root-types --root-types-no-schema-prefix --check",
+    "e2e": "playwright test"
+  },
+  "private": true,
+  "packageManager": "npm@11.12.1",
+  "dependencies": {
+    "@angular/cdk": "21.2.14",
+    "@angular/common": "21.2.26",
+    "@angular/compiler": "21.2.26",
+    "@angular/core": "21.2.26",
+    "@angular/forms": "21.2.26",
+    "@angular/material": "21.2.14",
+    "@angular/platform-browser": "21.2.26",
+    "@angular/router": "21.2.26",
+    "angular-auth-oidc-client": "22.0.3",
+    "rxjs": "7.8.2",
+    "tslib": "2.9.1"
+  },
+  "devDependencies": {
+    "@angular/build": "21.2.30",
+    "@angular/cli": "21.2.30",
+    "@angular/compiler-cli": "21.2.26",
+    "@playwright/test": "1.65.1",
+    "jsdom": "28.1.0",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.10.1",
+    "typescript": "5.9.3",
+    "vitest": "4.1.12"
+  }
+}

@@ -28,7 +28,8 @@ Each step document records what we built, why, the best option, and the alternat
 | 10 | [step-10-grounded-answers.md](steps/step-10-grounded-answers.md) | ✅ Complete |
 | 11 | [step-11-evaluation.md](steps/step-11-evaluation.md) — reports in [evaluation/](evaluation/) | ✅ Complete |
 | 12 | [step-12-security.md](steps/step-12-security.md) — threat model in [security/](security/threat-model.md) | ✅ Complete |
-| 13–14 | *created as we reach them* | — |
+| 13 | [step-13-angular-client.md](steps/step-13-angular-client.md) — client in [src/EKA.Web](../src/EKA.Web/) | ✅ Complete |
+| 14 | *created when we reach it* | — |
 
 ## ADRs — the decisions
 
@@ -68,6 +69,7 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0030](adr/0030-two-tier-evaluation-with-baselines.md) | Two-tier evaluation with baselines and a calibrated judge | Accepted |
 | [0031](adr/0031-oidc-jwt-and-document-ownership.md) | OIDC tokens (Keycloak local, Entra ID prod); owners and admins | Accepted |
 | [0032](adr/0032-rate-limits-budgets-and-upload-hardening.md) | Rate limits, tenant token budgets, hardened uploads | Accepted |
+| [0033](adr/0033-angular-client-pkce-sse-generated-contract.md) | Angular client: PKCE sign-in, SSE answers, generated contract | Accepted |
 
 ## Project skills
 

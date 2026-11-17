@@ -199,9 +199,35 @@ internal sealed class RecordingChatService : IChatCompletionService
     /// <summary>When set, the reply to every call, e.g. an answer with citation markers.</summary>
     public string? Reply { get; set; }
 
+    /// <summary>With <see cref="FailWith"/>: how many deltas a stream emits before it fails, as a
+    /// provider dying half-way through an answer does.</summary>
+    public int DeltasBeforeFailure { get; set; }
+
     public Task<Result<ChatCompletion>> CompleteAsync(
         IReadOnlyList<ChatTurn> conversation,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(Answer(conversation));
+
+    /// <summary>The same reply, streamed word by word (spaces kept).</summary>
+    public async Task<Result<ChatCompletion>> StreamAsync(
+        IReadOnlyList<ChatTurn> conversation,
+        Func<string, CancellationToken, ValueTask> onDelta,
         CancellationToken cancellationToken = default)
+    {
+        var result = Answer(conversation);
+        var text = result.IsSuccess ? result.Value.Content : Reply ?? "partial answer that never finishes";
+        var pieces = System.Text.RegularExpressions.Regex.Split(text, "(?<= )");
+        var count = result.IsSuccess ? pieces.Length : Math.Min(DeltasBeforeFailure, pieces.Length);
+
+        foreach (var piece in pieces.Take(count))
+        {
+            await onDelta(piece, cancellationToken);
+        }
+
+        return result;
+    }
+
+    private Result<ChatCompletion> Answer(IReadOnlyList<ChatTurn> conversation)
     {
         lock (_gate)
         {
@@ -223,6 +249,6 @@ internal sealed class RecordingChatService : IChatCompletionService
                 new TokenCount(40),
                 new TokenCount(9));
 
-        return Task.FromResult(result);
+        return result;
     }
 }

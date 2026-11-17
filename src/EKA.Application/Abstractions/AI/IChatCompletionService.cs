@@ -31,6 +31,46 @@ public interface IChatCompletionService
     Task<Result<ChatCompletion>> CompleteAsync(
         IReadOnlyList<ChatTurn> conversation,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The same call, with the answer's text handed to <paramref name="onDelta"/> piece by piece
+    /// as the model writes it (Step 13, ADR-0033).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Why the result is still a whole <see cref="ChatCompletion"/>.</b> Streaming changes when
+    /// the user <i>sees</i> text, not what the application does with it: citations can only be
+    /// extracted, validated and renumbered from the finished answer (step-10), the budget needs
+    /// the usage that arrives last, and a turn is persisted whole or not at all. So the deltas are
+    /// a side channel for display, and the return value is the same contract as
+    /// <see cref="CompleteAsync"/> — including failure: a provider that dies half-way returns an
+    /// error, and whatever was already streamed is discarded by the caller.
+    /// </para>
+    /// <para>
+    /// The concatenated deltas are the raw model output; they are not guaranteed to equal the
+    /// returned <see cref="ChatCompletion.Content"/> after an adapter's own trimming, and a
+    /// caller must not persist them.
+    /// </para>
+    /// <para>
+    /// The default implementation is for an adapter that cannot stream: it completes normally
+    /// and reports the whole answer as one delta. Correct, merely not incremental.
+    /// </para>
+    /// </remarks>
+    async Task<Result<ChatCompletion>> StreamAsync(
+        IReadOnlyList<ChatTurn> conversation,
+        Func<string, CancellationToken, ValueTask> onDelta,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(onDelta);
+
+        var completion = await CompleteAsync(conversation, cancellationToken).ConfigureAwait(false);
+        if (completion.IsSuccess)
+        {
+            await onDelta(completion.Value.Content, cancellationToken).ConfigureAwait(false);
+        }
+
+        return completion;
+    }
 }
 
 /// <summary>One message handed to the model.</summary>

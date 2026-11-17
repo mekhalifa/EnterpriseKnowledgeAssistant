@@ -214,6 +214,25 @@ public sealed class DocumentUseCaseAccessTests
     }
 
     [Fact]
+    public async Task CanManage_tells_each_caller_what_the_handlers_would_allow_them()
+    {
+        // Step 13: the client hides controls with this flag, so it must be the enforced rule,
+        // answered per caller: owner and admin yes, a mere reader no, in detail and in the list.
+        var document = TestData.Document(owner: "olivia");
+        _documents.With(document);
+        var get = new GetDocumentHandler(_documents);
+        var list = new ListDocumentsHandler(_documents);
+        var olivia = TestData.Caller(subject: "olivia");
+        var admin = TestData.Caller(subject: "root", isAdministrator: true);
+
+        (await get.HandleAsync(new GetDocumentQuery(olivia, document.Id))).Value.CanManage.ShouldBeTrue();
+        (await get.HandleAsync(new GetDocumentQuery(admin, document.Id))).Value.CanManage.ShouldBeTrue();
+        (await get.HandleAsync(new GetDocumentQuery(_bob, document.Id))).Value.CanManage.ShouldBeFalse();
+        (await list.HandleAsync(new ListDocumentsQuery(_bob, null, 1, 20))).Value.Items.Single().CanManage.ShouldBeFalse();
+        (await list.HandleAsync(new ListDocumentsQuery(olivia, null, 1, 20))).Value.Items.Single().CanManage.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task An_administrator_of_another_tenant_cannot_see_the_document_at_all()
     {
         var document = TestData.Document();

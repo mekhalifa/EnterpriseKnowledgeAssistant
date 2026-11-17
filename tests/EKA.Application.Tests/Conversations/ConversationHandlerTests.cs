@@ -214,6 +214,68 @@ public sealed class ConversationHandlerTests
         _chat.Prompts.ShouldBeEmpty();
     }
 
+    // ── Streaming (Step 13) ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task A_streamed_answer_shows_the_raw_text_and_persists_the_renumbered_answer_once()
+    {
+        Index(TestData.Completed(chunkTexts: "Carry-over is five days."));
+        _chat.Answer = "Carry-over is five days [2].";
+        var conversationId = await StartedConversation();
+        var savesBefore = _unitOfWork.SaveCount;
+        var deltas = new List<string>();
+
+        var result = await Ask().StreamAsync(
+            new AskQuestionCommand(Alice, conversationId, "Carry-over?"),
+            (delta, _) => { deltas.Add(delta); return ValueTask.CompletedTask; });
+
+        result.IsSuccess.ShouldBeTrue(result.ToString());
+        // What the user watched arrive: the model's own words and numbering…
+        string.Concat(deltas).ShouldBe("Carry-over is five days [2].");
+        // …and what is kept: renumbered, cited, saved once with the question.
+        result.Value.Answer.Content.ShouldBe("Carry-over is five days [1].");
+        result.Value.Answer.Citations.ShouldHaveSingleItem().Number.ShouldBe(1);
+        _unitOfWork.SaveCount.ShouldBe(savesBefore + 1);
+        _conversations.All.Single().Messages.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task A_provider_failing_mid_stream_persists_nothing_although_text_was_shown()
+    {
+        var conversationId = await StartedConversation();
+        var savesBefore = _unitOfWork.SaveCount;
+        _chat.Answer = "You get twenty five days.";
+        _chat.FailWith = AiErrors.Unavailable;
+        _chat.DeltasBeforeFailure = 2;
+        var deltas = new List<string>();
+
+        var result = await Ask().StreamAsync(
+            new AskQuestionCommand(Alice, conversationId, "Leave?"),
+            (delta, _) => { deltas.Add(delta); return ValueTask.CompletedTask; });
+
+        deltas.Count.ShouldBe(2);
+        result.Error.ShouldBe(AiErrors.Unavailable);
+        // The same atomic turn as without streaming: half an answer is not an answer.
+        _conversations.All.Single().Messages.ShouldBeEmpty();
+        _unitOfWork.SaveCount.ShouldBe(savesBefore);
+    }
+
+    [Fact]
+    public async Task A_streamed_no_evidence_refusal_emits_no_deltas_because_no_model_was_asked()
+    {
+        var other = Alice with { TenantId = TestData.OtherTenant };
+        var conversationId = await StartedConversation(other);
+        var deltas = new List<string>();
+
+        var result = await Ask().StreamAsync(
+            new AskQuestionCommand(other, conversationId, "Anything?"),
+            (delta, _) => { deltas.Add(delta); return ValueTask.CompletedTask; });
+
+        result.Value.Grounding.ShouldBe("no_evidence");
+        deltas.ShouldBeEmpty();
+        _chat.Prompts.ShouldBeEmpty();
+    }
+
     // ── Grounding (Step 10) ─────────────────────────────────────────────────────────
 
     private async Task<Contracts.Conversations.AskQuestionResponse> AskAsync(string question, CallerIdentity? caller = null)

@@ -92,6 +92,56 @@ public sealed class AdapterTests
     }
 
     [Fact]
+    public async Task A_streamed_answer_arrives_in_pieces_and_ends_as_the_same_completion_with_usage()
+    {
+        var handler = new ScriptedHandler().ThenStream(["Annual ", "leave is ", "25 days [1]."]);
+        await using var provider = AiTestHost.Build(handler);
+        var deltas = new List<string>();
+
+        var result = await provider.GetRequiredService<IChatCompletionService>().StreamAsync(
+            [new ChatTurn(MessageRole.User, "question")],
+            (delta, _) => { deltas.Add(delta); return ValueTask.CompletedTask; });
+
+        result.IsSuccess.ShouldBeTrue(result.ToString());
+        deltas.ShouldBe(["Annual ", "leave is ", "25 days [1]."]);
+        result.Value.Content.ShouldBe("Annual leave is 25 days [1].");
+        result.Value.Model.ShouldBe("test-chat");
+        // Usage arrives on the last chunk of a stream; without it the budget would only have the estimate.
+        result.Value.InputTokens.ShouldBe(new TokenCount(12));
+        result.Value.OutputTokens.ShouldBe(new TokenCount(3));
+        handler.RequestBodies.Single().ShouldContain("\"stream\":true");
+    }
+
+    [Fact]
+    public async Task A_connection_that_drops_mid_answer_is_a_provider_failure_not_a_server_error()
+    {
+        var handler = new ScriptedHandler().ThenStream(["Annual ", "leave"], breakAfterDeltas: true);
+        await using var provider = AiTestHost.Build(handler);
+        var deltas = new List<string>();
+
+        var result = await provider.GetRequiredService<IChatCompletionService>().StreamAsync(
+            [new ChatTurn(MessageRole.User, "question")],
+            (delta, _) => { deltas.Add(delta); return ValueTask.CompletedTask; });
+
+        // Some text was already shown; the result still says the turn failed, so nothing is persisted.
+        deltas.ShouldNotBeEmpty();
+        result.Error.ShouldBe(AiErrors.Unavailable);
+    }
+
+    [Fact]
+    public async Task A_failure_in_the_callers_delta_handler_is_not_disguised_as_a_provider_failure()
+    {
+        // The callback writes to the browser. If that write fails it is our side, not the
+        // provider's, and a 502 would send someone to debug the wrong system.
+        var handler = new ScriptedHandler().ThenStream(["a", "b"]);
+        await using var provider = AiTestHost.Build(handler);
+
+        await Should.ThrowAsync<IOException>(() => provider.GetRequiredService<IChatCompletionService>().StreamAsync(
+            [new ChatTurn(MessageRole.User, "question")],
+            (_, _) => throw new IOException("client went away")));
+    }
+
+    [Fact]
     public async Task Embeddings_request_the_configured_dimensions_explicitly()
     {
         var handler = new ScriptedHandler()

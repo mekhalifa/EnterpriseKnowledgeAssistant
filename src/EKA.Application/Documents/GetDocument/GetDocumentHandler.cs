@@ -36,6 +36,6 @@ public sealed class GetDocumentHandler(IDocumentRepository documents)
         // another tenant: a 403 would confirm that the id exists (see DocumentErrors.NotFound).
         return DocumentAuthorization.CannotSee(document, query.Caller, query.DocumentId, out var error)
             ? error
-            : document.ToResponse();
+            : document.ToResponse(query.Caller);
     }
 }

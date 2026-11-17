@@ -52,6 +52,29 @@ public sealed record CitationResponse(
 
 public sealed record AskQuestionRequest(string Question);
 
+/// <summary>
+/// The server-sent event names of <c>POST /api/conversations/{id}/messages/stream</c> (Step 13,
+/// ADR-0033). A stream is zero or more <see cref="Delta"/> events, then exactly one
+/// <see cref="Completed"/> or <see cref="Error"/>, then the response ends.
+/// </summary>
+public static class AnswerStreamEvents
+{
+    /// <summary>A piece of the model's raw answer: <see cref="AnswerDeltaEvent"/>. For display only;
+    /// its <c>[n]</c> markers are the model's numbering, not the final citation numbers.</summary>
+    public const string Delta = "delta";
+
+    /// <summary>The persisted exchange: <see cref="AskQuestionResponse"/>. Replaces everything the
+    /// deltas showed.</summary>
+    public const string Completed = "completed";
+
+    /// <summary>A failure after the stream had started: an RFC 9457 problem document. Nothing was
+    /// persisted. A failure <i>before</i> the first event is an ordinary HTTP error status instead.</summary>
+    public const string Error = "error";
+}
+
+/// <summary>One piece of answer text as the model wrote it.</summary>
+public sealed record AnswerDeltaEvent(string Text);
+
 /// <summary>The exchange just persisted, plus how the answer was produced.</summary>
 /// <param name="PromptTokens">Input tokens as the provider counted them, if it reported.
 /// Null when no model was called.</param>

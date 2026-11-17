@@ -128,6 +128,14 @@ dotnet user-secrets --project src/EKA.Ingestion.Worker set "Ai:ApiKey" "<key>"
 dotnet run --project src/EKA.Ingestion.Worker
 # Local connection strings: use 127.0.0.1, not localhost (the SQL container binds IPv4 only).
 
+# Web client (Step 13, ADR-0033): src/EKA.Web, Angular 21. API on http://localhost:5118 (launch profile http).
+cd src/EKA.Web; npm ci; npm start   # http://localhost:4200, sign in as carol / local-dev-only
+npm test                            # client unit tests (Vitest), free
+npm run e2e                         # Playwright against the REAL stack (API + worker running); billed, cents
+# After an API contract change: refresh the snapshot, regenerate the types, commit both.
+$env:EKA_OPENAPI_UPDATE="1"; dotnet test tests/EKA.IntegrationTests --filter OpenApi
+npm run generate:api                # src/EKA.Web/src/app/core/api/schema.ts (never edit by hand)
+
 # Local SQL Server, Qdrant (Step 8) and Keycloak (Step 12). Requires deploy/.env (copy deploy/.env.example first).
 # Qdrant dashboard: http://127.0.0.1:6333/dashboard. The app uses gRPC on 6334.
 docker compose -f deploy/docker-compose.yml up -d

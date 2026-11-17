@@ -11,6 +11,7 @@ namespace EKA.Contracts.Documents;
 /// <param name="Status">Ingestion status name.</param>
 /// <param name="ChunkCount">Chunks produced so far.</param>
 /// <param name="CreatedAt">When the document was registered.</param>
+/// <param name="CanManage">Whether the caller may manage it (see <see cref="DocumentResponse"/>).</param>
 /// <remarks>
 /// Narrower than <see cref="DocumentResponse"/> on purpose. A list of 50 documents has no
 /// use for 50 failure reasons, and a list response that happens to contain every field is
@@ -24,4 +25,5 @@ public sealed record DocumentSummaryResponse(
     long SizeBytes,
     string Status,
     int ChunkCount,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    bool CanManage);
