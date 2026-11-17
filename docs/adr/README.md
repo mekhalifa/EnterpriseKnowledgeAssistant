@@ -59,6 +59,9 @@ useful as the current belief.
 | [0031](0031-oidc-jwt-and-document-ownership.md) | OIDC access tokens from any issuer, Keycloak locally; document owners and tenant administrators | Accepted | 2026-11-16 |
 | [0032](0032-rate-limits-budgets-and-upload-hardening.md) | Per-user rate limits, per-tenant monthly token budgets, hardened uploads | Accepted | 2026-11-16 |
 | [0033](0033-angular-client-pkce-sse-generated-contract.md) | Angular client: OIDC code + PKCE, SSE answer streaming, Material, generated contract | Accepted | 2026-11-17 |
+| [0034](0034-single-host-compose-deployment.md) | Single-host Compose deployment: migration job, readiness, CSP edge, ClamAV, locked restore | Accepted | 2026-11-17 |
+| [0035](0035-opentelemetry-without-serilog.md) | OpenTelemetry for logs, traces and metrics, without Serilog | Accepted | 2026-11-17 |
+| [0036](0036-shared-rate-limits-with-local-fallback.md) | Rate-limit buckets in Redis, per-process fallback when it is down | Accepted | 2026-11-17 |
 
 ## Template
 

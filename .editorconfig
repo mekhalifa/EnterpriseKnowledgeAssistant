@@ -27,7 +27,10 @@ root = true
 
 [*]
 charset = utf-8
-end_of_line = crlf
+# LF everywhere since Step 14, matching .gitattributes (eol=lf). It used to say crlf, which held
+# on a Windows checkout and failed `dotnet format --verify-no-changes` on every line of every
+# file on a Linux CI runner, where the same commit checks out with LF.
+end_of_line = lf
 indent_style = space
 indent_size = 4
 insert_final_newline = true
@@ -43,7 +46,7 @@ indent_size = 2
 # Two trailing spaces is a Markdown line break. Stripping it silently joins two lines.
 trim_trailing_whitespace = false
 
-[*.{cmd,bat}]
+[*.{cmd,bat,ps1}]
 end_of_line = crlf
 
 [*.sh]
@@ -160,6 +163,25 @@ dotnet_naming_rule.type_parameters_start_with_t.symbols = type_parameters
 dotnet_naming_rule.type_parameters_start_with_t.style = type_parameter_prefix
 dotnet_naming_rule.type_parameters_start_with_t.severity = warning
 
+# Constants and static readonly fields are PascalCase, the .NET convention, at any accessibility.
+# Declared before the private-field rule and narrower than it (required modifiers), so they win.
+# Without these two rules every `private const` was reported as missing its `_` prefix: invisible
+# in the build (EnforceCodeStyleInBuild is off) until `dotnet format --verify-no-changes` became a
+# CI gate in Step 14 and failed on 27 of them.
+dotnet_naming_symbols.constant_fields.applicable_kinds = field
+dotnet_naming_symbols.constant_fields.applicable_accessibilities = *
+dotnet_naming_symbols.constant_fields.required_modifiers = const
+dotnet_naming_rule.constants_are_pascal.symbols = constant_fields
+dotnet_naming_rule.constants_are_pascal.style = pascal_case
+dotnet_naming_rule.constants_are_pascal.severity = warning
+
+dotnet_naming_symbols.static_readonly_fields.applicable_kinds = field
+dotnet_naming_symbols.static_readonly_fields.applicable_accessibilities = *
+dotnet_naming_symbols.static_readonly_fields.required_modifiers = static, readonly
+dotnet_naming_rule.static_readonly_are_pascal.symbols = static_readonly_fields
+dotnet_naming_rule.static_readonly_are_pascal.style = pascal_case
+dotnet_naming_rule.static_readonly_are_pascal.severity = warning
+
 dotnet_naming_symbols.private_fields.applicable_kinds = field
 dotnet_naming_symbols.private_fields.applicable_accessibilities = private
 dotnet_naming_rule.private_fields_are_underscore_camel.symbols = private_fields
@@ -171,6 +193,13 @@ dotnet_naming_symbols.public_members.applicable_accessibilities = public,interna
 dotnet_naming_rule.public_members_are_pascal.symbols = public_members
 dotnet_naming_rule.public_members_are_pascal.style = pascal_case
 dotnet_naming_rule.public_members_are_pascal.severity = warning
+
+# Local constants read like constants (`const string Sql = ...`), not like variables.
+dotnet_naming_symbols.local_constants.applicable_kinds = local
+dotnet_naming_symbols.local_constants.required_modifiers = const
+dotnet_naming_rule.local_constants_are_pascal.symbols = local_constants
+dotnet_naming_rule.local_constants_are_pascal.style = pascal_case
+dotnet_naming_rule.local_constants_are_pascal.severity = warning
 
 dotnet_naming_symbols.parameters_and_locals.applicable_kinds = parameter,local
 dotnet_naming_rule.parameters_and_locals_are_camel.symbols = parameters_and_locals

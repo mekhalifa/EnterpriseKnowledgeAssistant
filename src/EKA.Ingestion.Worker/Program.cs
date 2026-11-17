@@ -1,3 +1,4 @@
+using EKA.Infrastructure.Observability;
 using EKA.Ingestion.Worker;
 
 // ─────────────────────────────────────────────────────────────────────────────────────
@@ -12,6 +13,9 @@ using EKA.Ingestion.Worker;
 // ─────────────────────────────────────────────────────────────────────────────────────
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// Logs, traces (one per ingestion job) and metrics over OTLP when configured (Step 14, ADR-0035).
+builder.AddEkaTelemetry("eka-worker", configureTracing: null, EKA.AI.DependencyInjection.TelemetrySourceName);
 
 builder.Services.AddIngestionWorker(builder.Configuration);
 

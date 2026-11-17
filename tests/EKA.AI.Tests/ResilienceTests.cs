@@ -1,8 +1,10 @@
 using System.Net;
+using EKA.AI.Configuration;
 using EKA.AI.Tests.Support;
 using EKA.Application.Abstractions.AI;
 using EKA.Application.Common;
 using EKA.Domain.Conversations;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 
@@ -24,6 +26,29 @@ public sealed class ResilienceTests
         await using var provider = AiTestHost.Build(handler, adjust);
         return await provider.GetRequiredService<IChatCompletionService>()
             .CompleteAsync(Ping, cancellationToken);
+    }
+
+    [Fact]
+    public void Connecting_to_the_provider_has_its_own_bound_shorter_than_an_attempt()
+    {
+        // The real primary handler, as AddAi builds it: AiTestHost would substitute it.
+        var settings = AiTestHost.ValidSettings();
+        var services = new ServiceCollection();
+        services.AddAi(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
+        using var provider = services.BuildServiceProvider();
+
+        HttpMessageHandler? handler = provider.GetRequiredService<IHttpMessageHandlerFactory>()
+            .CreateHandler(DependencyInjection.HttpClientName);
+        while (handler is DelegatingHandler delegating)
+        {
+            handler = delegating.InnerHandler;
+        }
+
+        var sockets = handler.ShouldBeOfType<SocketsHttpHandler>();
+        sockets.ConnectTimeout.ShouldBe(DependencyInjection.ProviderConnectTimeout);
+        // Against the shipped default, not these test settings (which shrink the attempt
+        // timeout to keep the suite fast): connecting must fail well before an attempt would.
+        sockets.ConnectTimeout.ShouldBeLessThan(new AiResilienceOptions().AttemptTimeout);
     }
 
     [Fact]

@@ -5,18 +5,19 @@ using EKA.Application.Conversations.GetConversation;
 using EKA.Application.Conversations.ListConversations;
 using EKA.Application.Conversations.StartConversation;
 using EKA.Application.Documents.DeleteDocument;
-using EKA.Application.Identity;
-using EKA.Application.Documents.GetDocument;
-using EKA.Application.Documents.ListDocuments;
 using EKA.Application.Documents.ExtractDocumentText;
+using EKA.Application.Documents.FailExhaustedIngestion;
+using EKA.Application.Documents.GetDocument;
 using EKA.Application.Documents.IndexDocument;
 using EKA.Application.Documents.Indexing;
 using EKA.Application.Documents.Ingestion;
+using EKA.Application.Documents.ListDocuments;
 using EKA.Application.Documents.RecoverStalledDocuments;
-using EKA.Application.Documents.UploadDocument;
 using EKA.Application.Documents.RenameDocument;
 using EKA.Application.Documents.ResetDocument;
 using EKA.Application.Documents.SetDocumentAccess;
+using EKA.Application.Documents.UploadDocument;
+using EKA.Application.Identity;
 using EKA.Application.Retrieval;
 using EKA.Application.Retrieval.SearchChunks;
 using EKA.Application.Usage;
@@ -148,6 +149,9 @@ public static class DependencyInjection
         services.AddScoped<ExtractedTextStore>();
 
         services.AddScoped<IndexDocumentHandler>();
+
+        // Step 14: the terminal step for a job whose retries are exhausted.
+        services.AddScoped<FailExhaustedIngestionHandler>();
 
         // The chunking Strategy. Swapping the algorithm (Step 11) is this one line.
         services.AddSingleton<IChunkingStrategy, SectionAwareChunker>();

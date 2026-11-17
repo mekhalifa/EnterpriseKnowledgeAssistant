@@ -1,5 +1,9 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
+using EKA.Application.Common;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using RedisRateLimiting;
+using StackExchange.Redis;
 
 namespace EKA.Api.Security;
 
@@ -46,6 +50,9 @@ public sealed class RateLimitingOptions
 
 internal static class RateLimiting
 {
+    /// <summary>The connection string that turns on the shared store. Absent: per process.</summary>
+    public const string RedisConnectionName = "Redis";
+
     public static void AddEkaRateLimiting(this WebApplicationBuilder builder)
     {
         var limits = builder.Configuration.GetSection(RateLimitingOptions.SectionName).Get<RateLimitingOptions>()
@@ -60,11 +67,28 @@ internal static class RateLimiting
             }
         }
 
+        // Step 14 (ADR-0036): with a Redis connection string, the buckets live in Redis and every
+        // API instance draws on the same one per user. Without it, each process keeps its own,
+        // which is right for one instance and for the test suite.
+        var redis = SharedRateLimitStore.Connect(builder.Configuration.GetConnectionString(RedisConnectionName));
+        if (redis is not null)
+        {
+            builder.Services.AddSingleton(redis);
+            builder.Services.AddHealthChecks().Add(new HealthCheckRegistration(
+                "redis",
+                _ => new RedisHealthCheck(redis),
+                // Degraded, not Unhealthy: the limiter falls back to per-process buckets, so the
+                // instance can still serve. Readiness must fail only for what it cannot do without.
+                HealthStatus.Degraded,
+                [HealthTags.Ready],
+                TimeSpan.FromSeconds(3)));
+        }
+
         builder.Services.AddRateLimiter(options =>
         {
-            options.AddPolicy(RateLimitingOptions.AskPolicy, context => Bucket(context, RateLimitingOptions.AskPolicy, limits.Ask));
-            options.AddPolicy(RateLimitingOptions.SearchPolicy, context => Bucket(context, RateLimitingOptions.SearchPolicy, limits.Search));
-            options.AddPolicy(RateLimitingOptions.UploadPolicy, context => Bucket(context, RateLimitingOptions.UploadPolicy, limits.Upload));
+            options.AddPolicy(RateLimitingOptions.AskPolicy, context => Bucket(context, RateLimitingOptions.AskPolicy, limits.Ask, redis));
+            options.AddPolicy(RateLimitingOptions.SearchPolicy, context => Bucket(context, RateLimitingOptions.SearchPolicy, limits.Search, redis));
+            options.AddPolicy(RateLimitingOptions.UploadPolicy, context => Bucket(context, RateLimitingOptions.UploadPolicy, limits.Upload, redis));
 
             options.OnRejected = async (rejected, cancellationToken) =>
             {
@@ -92,19 +116,38 @@ internal static class RateLimiting
     /// limiter runs after authorization, so anonymous traffic is answered 401 without consuming
     /// anyone's allowance.
     /// </summary>
-    private static RateLimitPartition<string> Bucket(HttpContext context, string policy, TokenBucketOptions bucket)
+    private static RateLimitPartition<string> Bucket(HttpContext context, string policy, TokenBucketOptions bucket, IConnectionMultiplexer? redis)
     {
         var user = context.User;
         var key = $"{policy}:{user.FindFirst(JwtAuthentication.TenantClaim)?.Value}:{user.FindFirst("sub")?.Value}";
 
-        return RateLimitPartition.GetTokenBucketLimiter(key, _ => new TokenBucketRateLimiterOptions
+        if (redis is null)
         {
-            TokenLimit = bucket.TokenLimit,
-            TokensPerPeriod = bucket.TokensPerMinute,
-            ReplenishmentPeriod = TimeSpan.FromMinutes(1),
-            AutoReplenishment = true,
-            // No queueing: a request over the limit is answered now, not held open.
-            QueueLimit = 0,
-        });
+            return RateLimitPartition.GetTokenBucketLimiter(key, _ => InMemory(bucket));
+        }
+
+        var logger = context.RequestServices.GetRequiredService<ILogger<FallbackRateLimiter>>();
+
+        return RateLimitPartition.Get(key, partitionKey => new FallbackRateLimiter(
+            redis,
+            new RedisTokenBucketRateLimiter<string>($"eka:ratelimit:{partitionKey}", new RedisTokenBucketRateLimiterOptions
+            {
+                ConnectionMultiplexerFactory = () => redis,
+                TokenLimit = bucket.TokenLimit,
+                TokensPerPeriod = bucket.TokensPerMinute,
+                ReplenishmentPeriod = TimeSpan.FromMinutes(1),
+            }),
+            new TokenBucketRateLimiter(InMemory(bucket)),
+            logger));
     }
+
+    private static TokenBucketRateLimiterOptions InMemory(TokenBucketOptions bucket) => new()
+    {
+        TokenLimit = bucket.TokenLimit,
+        TokensPerPeriod = bucket.TokensPerMinute,
+        ReplenishmentPeriod = TimeSpan.FromMinutes(1),
+        AutoReplenishment = true,
+        // No queueing: a request over the limit is answered now, not held open.
+        QueueLimit = 0,
+    };
 }

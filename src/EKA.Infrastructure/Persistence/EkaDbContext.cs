@@ -1,4 +1,5 @@
 using EKA.Application.Abstractions;
+using EKA.Application.Abstractions.Ingestion;
 using EKA.Domain.Common;
 using EKA.Domain.Conversations;
 using EKA.Domain.Identity;
@@ -6,7 +7,6 @@ using EKA.Domain.Ingestion;
 using EKA.Domain.Prompting;
 using EKA.Domain.Providers;
 using EKA.Domain.Retrieval;
-using EKA.Application.Abstractions.Ingestion;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 

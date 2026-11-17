@@ -1,0 +1,8 @@
+{
+  "apiBaseUrl": "http://localhost:5118",
+  "auth": {
+    "authority": "http://127.0.0.1:8080/realms/eka",
+    "clientId": "eka-cli",
+    "scope": "openid eka.access"
+  }
+}

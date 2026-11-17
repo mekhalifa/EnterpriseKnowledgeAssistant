@@ -40,10 +40,30 @@ public sealed class HealthEndpointTests : IAsyncLifetime
         (await response.Content.ReadAsStringAsync()).ShouldBe("Healthy");
     }
 
+    /// <summary>
+    /// Polls readiness the way an orchestrator does. Since Step 14 an instance reports ready
+    /// only after its warm-up, a moment after it starts listening, so a single request straight
+    /// after start-up may correctly see 503.
+    /// </summary>
+    private static async Task<HttpResponseMessage> WhenReadyAsync(HttpClient client)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            var response = await client.GetAsync("/health/ready");
+            if (response.StatusCode == HttpStatusCode.OK || DateTime.UtcNow > deadline)
+            {
+                return response;
+            }
+
+            await Task.Delay(200);
+        }
+    }
+
     [Fact]
     public async Task Readiness_reports_the_database_check_by_name()
     {
-        var response = await _factory.CreateAnonymousClient().GetAsync("/health/ready");
+        var response = await WhenReadyAsync(_factory.CreateAnonymousClient());
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
 
@@ -56,6 +76,23 @@ public sealed class HealthEndpointTests : IAsyncLifetime
         // Named, not just counted: an empty check list would also report "Healthy", and
         // that is precisely the failure a mistyped tag produces.
         checks.ShouldContain(check => check.GetProperty("name").GetString() == "sql-server");
+
+        // Step 14: the vector store is a hard dependency too (no search without it), and the
+        // warm-up gate is visible, so "why is this instance not ready" has a named answer.
+        checks.ShouldContain(check => check.GetProperty("name").GetString() == "qdrant");
+        checks.ShouldContain(check => check.GetProperty("name").GetString() == "warm-up");
+    }
+
+    [Fact]
+    public async Task Readiness_fails_when_the_vector_store_is_unreachable()
+    {
+        // Same database, but a Qdrant endpoint with nothing behind it.
+        using var noVectors = new EkaApiFactory(_sqlServer.ConnectionString, vectorStore: new Uri("http://127.0.0.1:1"));
+
+        var response = await WhenReadyAsync(noVectors.CreateAnonymousClient());
+
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await response.Content.ReadAsStringAsync()).ShouldContain("qdrant");
     }
 
     [Fact]
@@ -79,6 +116,6 @@ public sealed class HealthEndpointTests : IAsyncLifetime
 
         // A probe that needs a token reports "unhealthy" the day the token expires.
         (await client.GetAsync("/health/live")).StatusCode.ShouldBe(HttpStatusCode.OK);
-        (await client.GetAsync("/health/ready")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await WhenReadyAsync(client)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 }

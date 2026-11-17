@@ -50,6 +50,17 @@ public static class DependencyInjection
     /// tests can substitute its primary handler and exercise the real resilience pipeline.</summary>
     public const string HttpClientName = "eka-ai";
 
+    /// <summary>The ActivitySource and Meter name of the model-call spans and metrics (Step 14).
+    /// A host subscribes to it by name; without a subscriber the middleware records nothing.</summary>
+    public const string TelemetrySourceName = "EKA.AI";
+
+    /// <summary>How long opening a connection to the provider may take (Step 14). The attempt
+    /// timeout must stay long, because one attempt can be a whole streamed answer; connecting
+    /// is a different phase and needs its own, short bound. Without it, an unreachable provider
+    /// held a user for 94 s (two ~41 s OS-level connect attempts, then DNS failures) before the
+    /// 502 — found in the Step 14 deployment drill.</summary>
+    public static readonly TimeSpan ProviderConnectTimeout = TimeSpan.FromSeconds(10);
+
     public static IServiceCollection AddAi(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -74,6 +85,8 @@ public static class DependencyInjection
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
             {
                 PooledConnectionLifetime = TimeSpan.FromMinutes(2),
+                // DNS + TCP + TLS only; a slow model is bounded by the attempt timeout instead.
+                ConnectTimeout = ProviderConnectTimeout,
             })
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan)
             .AddStandardResilienceHandler()
@@ -109,7 +122,12 @@ public static class DependencyInjection
         // AddChatClient / AddEmbeddingGenerator return a builder: each Use…() wraps the
         // client in one more decorator. UseLogging logs calls at Debug and message content
         // only at Trace — leave Trace off anywhere real documents flow, because at Trace the
-        // log becomes a copy of every prompt and answer. UseOpenTelemetry joins in Step 14.
+        // log becomes a copy of every prompt and answer.
+        //
+        // UseOpenTelemetry (Step 14, ADR-0035) adds a span per call with the GenAI semantic
+        // conventions: model, token counts, finish reason, duration. Message content is NOT
+        // recorded: EnableSensitiveData stays at its default, false, for the same reason Trace
+        // logging stays off. It sits outside UseLogging so the span covers the whole call.
         services
             .AddChatClient(serviceProvider =>
             {
@@ -118,6 +136,7 @@ public static class DependencyInjection
                     .GetChatClient(options.ChatModel)
                     .AsIChatClient();
             })
+            .UseOpenTelemetry(sourceName: TelemetrySourceName)
             .UseLogging();
 
         services
@@ -128,6 +147,7 @@ public static class DependencyInjection
                     .GetEmbeddingClient(options.EmbeddingModel)
                     .AsIEmbeddingGenerator(options.EmbeddingDimensions);
             })
+            .UseOpenTelemetry(sourceName: TelemetrySourceName)
             .UseLogging();
 
         services.AddSingleton<IChatCompletionService, ChatCompletionService>();

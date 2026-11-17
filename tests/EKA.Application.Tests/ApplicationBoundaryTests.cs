@@ -1,5 +1,4 @@
 using System.Reflection;
-using EKA.Application;
 
 namespace EKA.Application.Tests;
 

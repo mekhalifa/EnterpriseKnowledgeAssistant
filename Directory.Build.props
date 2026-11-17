@@ -23,6 +23,19 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <PropertyGroup Label="Supply chain">
+    <!--
+      Step 14: every project records its full resolved dependency graph, transitive packages
+      and their content hashes, in packages.lock.json, committed. A restore that would resolve
+      anything different (a new transitive version, a re-published package with other bytes)
+      is then visible in review, and refused outright in CI and in the container build, which
+      restore in locked mode. Change a dependency: run `dotnet restore` and commit the lock
+      file diff with it.
+    -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+
   <PropertyGroup Label="Build quality">
     <!-- Same inputs produce byte-identical outputs: required for reproducible CI. -->
     <Deterministic>true</Deterministic>

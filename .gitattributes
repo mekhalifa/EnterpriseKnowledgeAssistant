@@ -2,10 +2,11 @@
 #
 # Without this, a file written with LF on one machine and CRLF on another produces a
 # diff where EVERY line changed, which buries real changes and makes `git blame`
-# useless. `text=auto` stores everything as LF in the repository and checks out the
-# platform's native ending in the working tree.
+# useless. `text=auto` stores everything as LF in the repository; `eol=lf` (Step 14) also
+# checks it out as LF on every platform, so the working tree matches what CI sees and what
+# .editorconfig requires. Windows tools (Visual Studio, VS Code, Rider) all read LF.
 
-* text=auto
+* text=auto eol=lf
 
 # Files that must keep a specific ending regardless of platform.
 *.sh            text eol=lf

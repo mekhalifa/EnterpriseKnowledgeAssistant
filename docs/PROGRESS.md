@@ -3,41 +3,32 @@
 Single source of truth for project state. Updated at the end of every working session.
 
 **Last updated:** 2026-11-17
-**Current step:** Step 13 complete → Step 14 next
-**Overall:** 13 of 14 steps done
-**Branch:** `step-13-angular-client` (branched from `step-12-security`; none merged to `main`)
+**Current step:** Step 14 complete: **the learning path is finished**
+**Overall:** 14 of 14 steps done
+**Branch:** `step-14-deployment` (branched from `step-13-angular-client`; none merged to `main`)
 
 ---
 
 ## ▶ NEXT ACTION
 
-**First, when the OpenRouter key has credit again (≈ 5 cents):** run the judge calibration with
-three votes, which has not yet passed against the real model (step-11 §5.4):
-`$env:EKA_EVAL_ANSWERS="1"; dotnet test tests/EKA.Evaluation --filter Category=Evaluation`.
+The 14 steps are done. What follows is post-MVP work, in priority order. Pick it with the owner;
+none of it is a learning-path step.
 
-**Step 14 — Deployment and release readiness.**
-Exit criterion: *a reproducible deployment and a completed release checklist.*
+1. **Tier-2 evaluation (≈ 5 cents, when the key has credit).** The three-vote judge calibration
+   has not yet passed against the real model (step-11 §5.4), and it is release-checklist item
+   A1.8: `$env:EKA_EVAL_ANSWERS="1"; dotnet test tests/EKA.Evaluation --filter Category=Evaluation`.
+2. **Merge strategy.** Fourteen stacked branches, none merged to `main`. Decide: merge the
+   stack into `main` as is (history kept), or squash per step.
+3. **Two small resilience fixes found by the Step 14 drills** (step-14 §6.7): map a database
+   connectivity failure to 503, not 500; give the readiness checks a timeout so a dead SQL
+   Server is reported in a second, not after the connect timeout.
+4. **Before anyone but the owner uses it:** [release checklist](operations/release-checklist.md)
+   Part B (TLS, a real identity provider, no password grant, least-privilege SQL, Qdrant key,
+   secret store, data-processor approval, durable telemetry, backups). Each item needs its own
+   decision; several need an ADR.
 
-**Decisions needed first:**
-
-| Decision | Options |
-|---|---|
-| Browser token handling in a deployment | CSP-hardened SPA (tokens in sessionStorage, as now) vs backend-for-frontend (tokens never in the browser) — ADR-0033 |
-| Deployment target | Docker Compose on one host vs Azure Container Apps vs Kubernetes; decides the storage adapter, secrets source and identity provider |
-| Malware scanner | ClamAV container vs Defender for Storage vs a vendor API (ADR-0032) |
-
-Then:
-
-1. Containers: API, worker, web (static files behind a reverse proxy that does **not** buffer
-   SSE), full compose with Redis for the shared rate-limit store.
-2. Readiness/liveness and **warm-up** (the API's first request took ~20 s, step-13 §7.7).
-3. Serilog + OpenTelemetry; CI: `dotnet build/test`, `dotnet format --verify-no-changes`,
-   `npm ci && npm test && npm run check:api && npm run build`, `packages.lock.json`.
-4. Load and failure-recovery tests, including concurrent ingestion of one tenant (the unexplained
-   ledger timeout, step-13 §7.7) and the terminal handler for exhausted ingestion retries.
-
-Reference: [adr/0033](adr/0033-angular-client-pkce-sse-generated-contract.md), [steps/step-13](steps/step-13-angular-client.md),
-[security/threat-model](security/threat-model.md).
+Reference: [steps/step-14](steps/step-14-deployment.md), [operations/release-checklist](operations/release-checklist.md),
+[adr/0034](adr/0034-single-host-compose-deployment.md).
 
 ---
 
@@ -464,6 +455,52 @@ persisted messages", so they belong there. Document upload of actual bytes is St
 **Observed, not resolved:** one 30 s `TenantTokenUsage` timeout during concurrent first-run
 indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. Both to Step 14.
 
+#### Step 14 — Deployment and release readiness ✅
+
+- **Exit criterion met.** One command brings up the whole system, migrated, warm, observable,
+  with two API replicas behind a CSP edge:
+  `docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml up -d --build --wait`.
+  The [release checklist](operations/release-checklist.md) is complete, with evidence for every
+  gate, smoke check and drill, and lists 12 blocking items for any exposure beyond loopback.
+- Decided with the owner, each on the recommended option: Compose on one host, CSP-hardened
+  SPA, ClamAV ([ADR-0034](adr/0034-single-host-compose-deployment.md)). Also recorded:
+  OpenTelemetry without Serilog, because Serilog replaces the log filters that keep document
+  text out of logs ([ADR-0035](adr/0035-opentelemetry-without-serilog.md)); Redis-shared rate
+  limits with a per-process fallback ([ADR-0036](adr/0036-shared-rate-limits-with-local-fallback.md)).
+- Built: three .NET image targets plus web; migration bundle as the release step; readiness
+  (SQL, Qdrant, warm-up, Redis as Degraded) and liveness; startup warm-up (Step 13's 20 s first
+  request gone); nginx edge (CSP, no SSE buffering, same origin, runtime `/config.json`);
+  JSON logs + OTLP traces and metrics; ClamAV scanner; exhausted retries end in `Failed`;
+  narrow plain-HTTP metadata rule for the container network (tested); lock files; CI workflow;
+  k6 load test.
+- **Drills on the deployed stack:**
+  - Reads: 0 % errors at 40 req/s, p95 24 ms.
+  - Shared limiter: 10 of 40 searches admitted across two replicas.
+  - Each dependency stopped in turn, all recovered without restarts:
+    - an API replica under load: 0 failed reads;
+    - Redis: Degraded, limits per instance;
+    - the worker: upload queued, then processed;
+    - SQL Server: not ready, still live.
+  - EICAR rejected by ClamAV before parsing.
+  - Streamed, cited answer through nginx.
+  - 8 concurrent uploads from one tenant: all completed, no retries. Step 13's ledger timeout
+    did not reproduce.
+- **726 .NET tests** (+1 AI: the connect-timeout rule; Step 14's earlier additions counted in),
+  **31 client unit tests**.
+
+**Found and fixed by running the release, all recorded in [step-14 §6](steps/step-14-deployment.md):**
+
+1. Six lock files carried a `win-x64` RID from a RID-specific restore; locked restore (CI, images)
+   failed with NU1004. Regenerated.
+2. The format gate would have failed CI (import order, an unused using).
+3. The web tier crash-looped (`.envsh` copied without the execute bit, so the CSP variable was
+   never set) while `up --wait` said Healthy, because `web` had no healthcheck. Both fixed.
+4. The load test read an administrators-only endpoint: 21 % "errors" that were correct 403s.
+5. An unreachable provider held users 94 s (OS connect timeout under a 60 s attempt timeout).
+   `ConnectTimeout` = 10 s, tested against the real handler chain.
+6. Readiness probes flooded the API's logs with `SELECT 1`; EF commands at Warning outside
+   Development.
+
 ---
 
 ## Step checklist
@@ -483,7 +520,7 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 | 11 | Evaluation | ✅ Complete — 632 tests |
 | 12 | Security and enterprise controls | ✅ Complete — 687 tests |
 | 13 | Angular 21 client | ✅ Complete — 704 .NET + 27 client + 2 e2e |
-| 14 | Deployment and release readiness | ⬜ Next |
+| 14 | Deployment and release readiness | ✅ Complete — 726 .NET + 31 client; deployment drills in the release checklist |
 
 ---
 
@@ -498,15 +535,14 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 | With an admin report | Grants table vs JSON column | JSON column suffices until an admin report needs "everything group X can read" |
 | With a real corpus | Chunk size and algorithm | 500/75 section-aware is unchallenged by the synthetic set (sections are short). Compare semantic or parent/child on long real documents; the evaluation can now measure it ([ADR-0024](adr/0024-section-aware-chunking-deterministic-point-ids.md)) |
 | Later | Follow-up retrieval | One pronoun follow-up ranks 2nd (q29). Add more follow-ups to the set before paying for LLM query rewriting ([ADR-0029](adr/0029-grounded-answers-refusal-and-citations.md)) |
-| Step 14 | BFF vs CSP-hardened SPA | Tokens are in sessionStorage today; a BFF removes them from the browser (ADR-0033) |
+| If data becomes sensitive | BFF vs CSP-hardened SPA | CSP-hardened SPA chosen for Step 14 (ADR-0034); a BFF removes tokens from the browser entirely (ADR-0033) |
 | When indexing waits grow | Push instead of polling | The documents page polls every 3 s while anything is in progress; push needs a worker → API channel |
-| Step 14 | Production identity configuration | Entra ID app registration (audience, `eka.access` scope, `groups` + `roles` claims) or managed Keycloak; disable the password grant ([ADR-0031](adr/0031-oidc-jwt-and-document-ownership.md)) |
+| Before exposure (checklist B2, B3) | Production identity configuration | Entra ID app registration (audience, `eka.access` scope, `groups` + `roles` claims) or managed Keycloak; disable the password grant ([ADR-0031](adr/0031-oidc-jwt-and-document-ownership.md)) |
 | Deferred from Step 12 | EF global query filters | *Defence in depth* on top of explicit tenant parameters (ADR-0009). Not done: every path is already tenant-scoped and covered by `SecurityTests`; revisit if a raw `DbContext` query is ever added |
-| Step 14 | Malware scanner adapter | ClamAV container vs Defender for Storage vs a vendor API, behind `IMalwareScanner` ([ADR-0032](adr/0032-rate-limits-budgets-and-upload-hardening.md)) |
-| Step 14 | Shared rate-limit store | Redis once more than one API instance runs (limits are per process today) |
 | Later | `AIProvider` rows vs `Ai` configuration | The seeded row records what a prompt was written for; configuration chooses what answers. Reconcile or drop the table |
-| Step 14 | Hangfire dashboard | Not wired: mapping it resolves job storage at API startup. Belongs with operations/monitoring, behind authorization |
-| Step 14 | Second storage adapter | Azure Blob vs S3, once the deployment target is chosen ([ADR-0021](adr/0021-file-storage-port-local-disk.md)) |
+| With operations tooling (checklist B11) | Hangfire dashboard | Not wired: mapping it resolves job storage at API startup. Behind authorization, or not exposed |
+| When leaving one host | Second storage adapter | Compose keeps local disk on a shared volume (ADR-0034); Azure Blob or S3 with Container Apps or Kubernetes ([ADR-0021](adr/0021-file-storage-port-local-disk.md)) |
+| When telemetry must persist (checklist B8) | Telemetry backend | Collector + Grafana/Tempo/Loki vs a vendor vs Azure Monitor; the Aspire dashboard is memory only (ADR-0035) |
 
 ---
 
@@ -525,8 +561,9 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 | Provider cost runaway | Embedding large corpora gets expensive fast | One retry layer (Step 5); output cap (Step 11); per-user rate limits and per-tenant monthly budgets checked before provider calls (Step 12). Budgets are soft (concurrent overshoot) |
 | Third-party data path | OpenRouter sits between us and the model vendor | Learning data only until the decision above is made; switching to OpenAI direct or Azure is configuration (ADR-0015) |
 | Scope creep into agents/GraphRAG | Burns the 12 weeks before the basics work | The out-of-scope list in the learning path |
-| Supply chain via NuGet | A malicious package executes at build time | Source mapping (ADR-0006); NuGet audit as errors + transitive pinning (Step 7, caught NU1903); `packages.lock.json` at Step 14 |
-| Untrusted uploads | Parsers are attack surface; files may lie about their type | Type from bytes (Step 7); measured zip-bomb, page and text caps; scanning port before parsing (Step 12). No real scanner configured yet |
+| Supply chain via NuGet | A malicious package executes at build time | Source mapping (ADR-0006); NuGet audit as errors + transitive pinning (Step 7, caught NU1903); `packages.lock.json` restored in locked mode in CI and images (Step 14). Never commit lock files after a RID-specific restore (step-14 §6.1) |
+| Untrusted uploads | Parsers are attack surface; files may lie about their type | Type from bytes (Step 7); measured zip-bomb, page and text caps; scanning before parsing (Step 12); ClamAV in the deployment, EICAR rejected end to end (Step 14). Local `dotnet run` still uses the no-op scanner |
+| Exposure before Part B | Every shortcut of the single-host deployment is safe only on loopback | Ports bound to 127.0.0.1; the [release checklist](operations/release-checklist.md) Part B lists the 12 blocking items |
 
 ---
 
@@ -555,17 +592,24 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
   disabled; no introspection or revocation check.
 - **Groups overage** (Entra ID, more than 200 groups) gives the caller no groups: fails closed.
 - **Administrators see the titles of documents they cannot read** (to manage them).
-- **Budgets are soft and per month; rate limits are per process.** Concurrent requests can
-  overshoot a budget by what they cost together; several API instances each allow the full rate.
-- **No malware scanner is configured.** The port runs before every parse; the no-op adapter
-  logs a warning once per worker start.
+- **Budgets are soft and per month.** Concurrent requests can overshoot a budget by what they
+  cost together.
+- **Rate limits loosen while Redis is down:** each API instance then allows the full rate
+  (by design, ADR-0036), and readiness reports Degraded. Without `ConnectionStrings:Redis`
+  (local `dotnet run`) limits are always per process.
+- **Local `dotnet run` has no malware scanner.** The no-op adapter logs a warning once per
+  worker start; the Compose deployment uses ClamAV (`MalwareScanning:Scanner=ClamAv`).
 - **Budgets are configuration, not data:** changing one is a configuration change and restart.
-- **The startup guard against HTTP metadata outside Development is asserted by code review**,
-  not by a test (it would have to boot the app in another environment).
-- **Exhausted retries leave a document in an intermediate status** (`Extracting`, `Chunking`
-  or `Embedding`). After five transient failures the job sits in Hangfire's Failed list; the
-  sweep only re-enqueues `Pending`. Needs a terminal handler that marks the document Failed,
-  or a sweep over stalled intermediate statuses (ADR-0026).
+- **The deployment is one host, plain HTTP, development-mode Keycloak, `sa` for SQL.**
+  Acceptable only on loopback; the [release checklist](operations/release-checklist.md)
+  Part B lists everything that blocks exposure.
+- **A database outage surfaces as 500, not 503,** and the readiness probe answers slowly while
+  SQL Server is down (its check waits out the connect timeout). Outcome correct, signal poor
+  (step-14 §6.7).
+- **Every `docker compose` command over the app file needs `EKA_AI_API_KEY` set,** even `ps`
+  and `logs` (runbook).
+- **Telemetry lives in memory** (Aspire dashboard): gone when the container restarts.
+- **No backups** of SQL Server, Qdrant or the file volume.
 - **Orphaned files and vectors accumulate after crashes** or a store outage during delete.
   Harmless to readers (no text in the payload, hits resolve against SQL), but no
   reconciliation job reclaims them yet.
@@ -580,7 +624,8 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
   save (same result — correct, wasteful).
 - **No OCR and no layout analysis.** Scanned PDFs fail clearly; multi-column pages may
   extract out of order ([ADR-0022](adr/0022-pure-dotnet-text-extraction.md)).
-- **File storage is single-machine** (local disk). API and worker must share a disk or volume.
+- **File storage is single-machine** (local disk). API and worker must share a disk or volume
+  (`eka-files` in the deployment).
 - **Hangfire polls SQL Server once per second** per worker process.
 - **First-contact provisioning races itself.** Two concurrent *first* requests by one person
   both miss the user lookup; the unique index rejects the second as a 500. Safe, not
@@ -629,8 +674,9 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 - **`ListAsync` uses offset paging**, so a deep page scans and discards, and an insert
   between two requests can shift a row across a page boundary. Correct for a page-numbered
   UI; revisit if a tenant's document count reaches the thousands.
-- **`.editorconfig` does not gate the build.** `EnforceCodeStyleInBuild` is off on purpose
-  (see step-04 §9); `dotnet format --verify-no-changes` becomes a CI step in Step 14.
+- **`.editorconfig` does not gate the local build.** `EnforceCodeStyleInBuild` is off on purpose
+  (see step-04 §9); CI runs `dotnet format --verify-no-changes` (Step 14). Run it before pushing:
+  the build passing locally does not mean the format gate will.
 - **`LoggingDomainEventDispatcher` invokes no handlers.** It logs each event so the wiring
   is visibly working and visibly incomplete. Step 7 did not need one — ingestion is driven by
   the job, not by events — so the first subscriber waits for a real consumer (notifications,
@@ -648,9 +694,11 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
   of overridden settings rather than ours. Retry and timeout behaviour are tested.
 - **No provider health check.** A readiness probe that calls the model would cost money on
   every probe and take instances out of rotation for an upstream outage they cannot fix.
-  Deliberately absent; revisit with Step 14's monitoring.
+  Deliberately absent, still (Step 14): provider failures show as `ai.unavailable` problems
+  and in the traces, not as instances leaving rotation.
 - **Access tokens live in the browser's sessionStorage** (Step 13): readable by any script that
-  runs in the page. No CSP is served yet; Step 14 (ADR-0033).
+  runs in the page. The deployment's CSP (`script-src 'self'`, no inline script) is the
+  mitigation (ADR-0034); `ng serve` in development serves no CSP.
 - **The e2e tests need the real stack and make billed calls**; they are not part of `npm test`.
   A test that fails before its clean-up leaves its documents in tenant A (delete as `root`).
 - **The client's dev tooling has moderate npm advisories** (`glob` via the Angular CLI's

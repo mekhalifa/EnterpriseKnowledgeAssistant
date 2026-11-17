@@ -1,0 +1,24 @@
+# The build context is the repository root (deploy/docker-compose.yml). Everything here is
+# never sent to the Docker daemon: faster builds, and no local secret or build output can end
+# up inside an image layer by accident.
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/.angular/
+**/test-results/
+**/playwright-report/
+.git/
+.vs/
+.vscode/
+.idea/
+.claude/
+.agents/
+**/*.user
+**/*.suo
+deploy/.env
+**/.env
+**/appsettings.*.local.json
+**/secrets.json
+docs/
+tests/

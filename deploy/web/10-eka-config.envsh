@@ -1,0 +1,15 @@
+# Sourced (not executed) by the nginx image's entrypoint, before the template step, so the
+# variables exported here are visible to it. One setting in, two derived values out.
+# The file must still be executable: the entrypoint skips a *.envsh without the x bit.
+#
+# EKA_AUTH_AUTHORITY is required: a client that cannot sign in is a broken deployment, and
+# failing here stops the container with a message instead of serving a page that loops.
+
+if [ -z "${EKA_AUTH_AUTHORITY:-}" ]; then
+    echo "EKA_AUTH_AUTHORITY must be set to the OIDC issuer the API validates." >&2
+    exit 1
+fi
+
+# The issuer's origin (scheme://host[:port]) for the CSP's connect-src.
+EKA_AUTH_ORIGIN="$(printf '%s' "$EKA_AUTH_AUTHORITY" | sed -E 's#^(https?://[^/]+).*$#\1#')"
+export EKA_AUTH_ORIGIN

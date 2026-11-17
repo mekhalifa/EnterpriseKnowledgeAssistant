@@ -1,5 +1,4 @@
 using EKA.Application.Abstractions.Ingestion;
-using EKA.Domain.Ingestion;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
 

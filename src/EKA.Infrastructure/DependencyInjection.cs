@@ -2,24 +2,24 @@ using EKA.Application.Abstractions;
 using EKA.Application.Abstractions.Ingestion;
 using EKA.Application.Abstractions.Retrieval;
 using EKA.Application.Abstractions.Usage;
-using EKA.Infrastructure.Usage;
+using EKA.Application.Common;
 using EKA.Infrastructure.Extraction;
 using EKA.Infrastructure.Jobs;
-using EKA.Infrastructure.Storage;
-using EKA.Infrastructure.VectorStore;
-using Microsoft.Extensions.Options;
-using Qdrant.Client;
-using Hangfire;
-using Hangfire.SqlServer;
-using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Hosting;
-using EKA.Application.Common;
 using EKA.Infrastructure.Persistence;
 using EKA.Infrastructure.Persistence.Interceptors;
 using EKA.Infrastructure.Persistence.Repositories;
+using EKA.Infrastructure.Storage;
+using EKA.Infrastructure.Usage;
+using EKA.Infrastructure.VectorStore;
+using Hangfire;
+using Hangfire.SqlServer;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Qdrant.Client;
 
 namespace EKA.Infrastructure;
 
@@ -131,9 +131,28 @@ public static class DependencyInjection
         services.AddTextExtraction();
         services.AddOptions<ExtractionLimits>().Bind(configuration.GetSection(ExtractionLimits.SectionName));
 
-        // Step 12: the scanning port, with the explicit no-scanner adapter until a real one is
-        // chosen at deployment. Swap this line for ClamAV or a cloud scanner.
-        services.AddSingleton<IMalwareScanner, NoMalwareScanner>();
+        // Step 12: the scanning port. Step 14: ClamAV behind it, chosen by configuration
+        // (MalwareScanning:Scanner). None stays the default so a laptop needs no clamd, and it
+        // says so in the log once per process; the deployment sets ClamAv (ADR-0034).
+        services.AddOptions<MalwareScanningOptions>()
+            .Bind(configuration.GetSection(MalwareScanningOptions.SectionName))
+            .Validate(
+                scanning => scanning.Scanner is not MalwareScannerKind.ClamAv
+                    || (!string.IsNullOrWhiteSpace(scanning.Host) && scanning.Port is > 0 and < 65536 && scanning.Timeout > TimeSpan.Zero),
+                $"'{MalwareScanningOptions.SectionName}' with Scanner=ClamAv needs Host, a Port in 1-65535 and a positive Timeout.")
+            .ValidateOnStart();
+
+        var scanner = configuration.GetSection(MalwareScanningOptions.SectionName).Get<MalwareScanningOptions>()?.Scanner
+            ?? MalwareScannerKind.None;
+
+        if (scanner is MalwareScannerKind.ClamAv)
+        {
+            services.AddSingleton<IMalwareScanner, ClamAvMalwareScanner>();
+        }
+        else
+        {
+            services.AddSingleton<IMalwareScanner, NoMalwareScanner>();
+        }
 
         // The API enqueues IngestionJobs by type, in an expression Hangfire serializes, and
         // never resolves it. Only the worker does, so IngestionJobs is registered by
@@ -207,6 +226,11 @@ public static class DependencyInjection
 
         // Singleton: it remembers, per process, that the collection has been checked.
         services.AddSingleton<IVectorStore, QdrantVectorStore>();
+
+        // Step 14: Qdrant joins SQL Server on the readiness probe. A timeout, because a probe
+        // that hangs is worse than one that fails: the orchestrator learns nothing either way.
+        services.AddHealthChecks()
+            .AddCheck<QdrantHealthCheck>("qdrant", tags: [HealthTags.Ready], timeout: TimeSpan.FromSeconds(5));
     }
 
     /// <summary>

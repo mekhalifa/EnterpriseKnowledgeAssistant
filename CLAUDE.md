@@ -136,6 +136,13 @@ npm run e2e                         # Playwright against the REAL stack (API + w
 $env:EKA_OPENAPI_UPDATE="1"; dotnet test tests/EKA.IntegrationTests --filter OpenApi
 npm run generate:api                # src/EKA.Web/src/app/core/api/schema.ts (never edit by hand)
 
+# The whole system as a deployment (Step 14, ADR-0034): migrate job, 2 API replicas, worker, web, Redis,
+# ClamAV, telemetry. Needs EKA_AI_API_KEY and REDIS_PASSWORD too, for EVERY compose command over the app file.
+# Release gates, drills and runbook: docs/operations/release-checklist.md.
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml up -d --build --wait --wait-timeout 600
+# http://127.0.0.1:8088 (carol / local-dev-only), telemetry http://127.0.0.1:18888 (token: docker logs eka-otel)
+dotnet format --verify-no-changes   # the CI format gate; the local build does not enforce it
+
 # Local SQL Server, Qdrant (Step 8) and Keycloak (Step 12). Requires deploy/.env (copy deploy/.env.example first).
 # Qdrant dashboard: http://127.0.0.1:6333/dashboard. The app uses gRPC on 6334.
 docker compose -f deploy/docker-compose.yml up -d

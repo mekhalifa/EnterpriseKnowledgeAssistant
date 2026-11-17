@@ -1,5 +1,4 @@
 using System.Reflection;
-using EKA.Domain;
 
 namespace EKA.Domain.Tests;
 

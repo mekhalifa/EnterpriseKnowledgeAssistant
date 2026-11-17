@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging.Abstractions;
 using EKA.Application.Common;
 using EKA.Application.Documents.DeleteDocument;
 using EKA.Application.Documents.RenameDocument;
@@ -6,6 +5,7 @@ using EKA.Application.Documents.ResetDocument;
 using EKA.Application.Tests.Fakes;
 using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 
 namespace EKA.Application.Tests.Documents;

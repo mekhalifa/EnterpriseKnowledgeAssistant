@@ -97,6 +97,36 @@
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="$(MicrosoftRuntimeVersion)" />
   </ItemGroup>
 
+  <ItemGroup Label="Observability">
+    <!--
+      Step 14 (ADR-0035): the three pillars over one protocol. Logs stay on the built-in
+      Microsoft.Extensions.Logging pipeline (JSON console in containers) with OpenTelemetry as
+      an extra provider; traces and metrics come from the instrumentation below. All three are
+      exported by OTLP when OTEL_EXPORTER_OTLP_ENDPOINT is set, and not at all otherwise.
+      Serilog was planned here and deliberately not taken: its host integration replaces the
+      logger factory, which bypasses the Logging:LogLevel filters that keep prompts and
+      document text out of the logs (see ADR-0035).
+    -->
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.21.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.21.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.21.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.21.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.SqlClient" Version="1.21.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Shared state">
+    <!--
+      Step 14: rate-limit buckets in Redis, so several API instances share one allowance per
+      user instead of each granting the full rate (ADR-0036). RedisRateLimiting (MIT) adapts
+      System.Threading.RateLimiting to Redis with atomic Lua scripts. It asks for
+      StackExchange.Redis >= 2.8.0; pinned here to the newest 2.x, the major it was built
+      against, rather than the floor.
+    -->
+    <PackageVersion Include="RedisRateLimiting.AspNetCore" Version="1.2.1" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.13.23" />
+  </ItemGroup>
+
   <ItemGroup Label="Hosting and configuration">
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="$(MicrosoftRuntimeVersion)" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="$(MicrosoftRuntimeVersion)" />
@@ -175,7 +205,7 @@
               Microsoft.Extensions.Http.Resilience
               (Azure.AI.OpenAI deliberately not yet: see ADR-0015)
       Step 8  Qdrant.Client
-      Step 14 Serilog.AspNetCore, OpenTelemetry.Extensions.Hosting
+      Step 14 OpenTelemetry, RedisRateLimiting (above). Serilog: considered, not taken (ADR-0035)
   -->
 
 </Project>

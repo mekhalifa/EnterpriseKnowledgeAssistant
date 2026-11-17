@@ -45,20 +45,37 @@ public sealed class JwtAuthenticationOptions
     /// </summary>
     public bool RequireHttpsMetadata { get; set; } = true;
 
+    /// <summary>
+    /// Where to fetch the metadata, when that is not <c>{Authority}/.well-known/openid-configuration</c>
+    /// (Step 14). In Compose the token's issuer is the address the <i>browser</i> uses
+    /// (<c>http://127.0.0.1:8080/realms/eka</c>), which inside the API's container is the
+    /// container itself. The issuer is still validated against <see cref="Authority"/>'s
+    /// metadata; only the address it is read from changes.
+    /// </summary>
+    public string? MetadataAddress { get; set; }
+
+    /// <summary>
+    /// Permits plain-HTTP metadata outside Development, but only from a single-label host name
+    /// (a Compose service such as <c>keycloak</c>), which resolves on the container network and
+    /// nowhere else. Off by default; the release checklist requires it off wherever the
+    /// identity provider is not on the same private network (ADR-0034).
+    /// </summary>
+    public bool AllowHttpMetadataOnPrivateNetwork { get; set; }
+
     /// <summary>Tolerated clock difference with the issuer. The library default is five minutes,
     /// which keeps an expired token alive that long; one minute covers real clock drift.</summary>
     public TimeSpan ClockSkew { get; set; } = TimeSpan.FromMinutes(1);
 }
 
 /// <summary>Registers JWT bearer authentication and the scope check (Step 12, ADR-0031).</summary>
-internal static class JwtAuthentication
+public static class JwtAuthentication
 {
     /// <summary>Claim names as the token carries them. Inbound claim mapping is off (see below).</summary>
     public const string TenantClaim = "tid";
     public const string GroupsClaim = "groups";
     public const string RolesClaim = "roles";
 
-    public static void AddEkaAuthentication(this WebApplicationBuilder builder)
+    internal static void AddEkaAuthentication(this WebApplicationBuilder builder)
     {
         var jwt = builder.Configuration.GetSection(JwtAuthenticationOptions.SectionName).Get<JwtAuthenticationOptions>()
             ?? new JwtAuthenticationOptions();
@@ -72,11 +89,9 @@ internal static class JwtAuthentication
                 + "at the Keycloak realm in deploy/docker-compose.yml (see appsettings.Development.json).");
         }
 
-        if (!jwt.RequireHttpsMetadata && !builder.Environment.IsDevelopment())
+        if (MetadataTransportProblem(jwt, builder.Environment.IsDevelopment()) is { } problem)
         {
-            throw new InvalidOperationException(
-                $"'{JwtAuthenticationOptions.SectionName}:RequireHttpsMetadata' is false in '{builder.Environment.EnvironmentName}'. "
-                + "Signing keys fetched over plain HTTP can be replaced in transit; only local development may do that.");
+            throw new InvalidOperationException(problem);
         }
 
         builder.Services.AddOptions<JwtAuthenticationOptions>().BindConfiguration(JwtAuthenticationOptions.SectionName);
@@ -88,6 +103,11 @@ internal static class JwtAuthentication
                 options.Authority = jwt.Authority;
                 options.Audience = jwt.Audience;
                 options.RequireHttpsMetadata = jwt.RequireHttpsMetadata;
+
+                if (!string.IsNullOrWhiteSpace(jwt.MetadataAddress))
+                {
+                    options.MetadataAddress = jwt.MetadataAddress;
+                }
 
                 // Keep claim names as issued (sub, tid, groups, roles, scope). The default mapping
                 // renames them to long WS-Fed URIs; code that then looks for "sub" finds nothing,
@@ -104,6 +124,47 @@ internal static class JwtAuthentication
                 options.TokenValidationParameters.NameClaimType = "name";
                 options.TokenValidationParameters.RoleClaimType = RolesClaim;
             });
+    }
+
+    /// <summary>
+    /// Why the configured metadata transport is unsafe here, or <c>null</c> when it is fine.
+    /// </summary>
+    /// <remarks>
+    /// Signing keys fetched over plain HTTP can be replaced by anyone on the network path, and
+    /// with them every identity. Development may do it (Keycloak on loopback). Elsewhere it is
+    /// refused, with one narrow exception: an explicit opt-in, and a metadata host that is a
+    /// single label (no dot), i.e. a container-network service name that cannot be resolved,
+    /// or intercepted, from outside the host. A pure function so the rule has tests, rather
+    /// than being asserted by code review as it was in Step 12.
+    /// </remarks>
+    public static string? MetadataTransportProblem(JwtAuthenticationOptions jwt, bool isDevelopment)
+    {
+        ArgumentNullException.ThrowIfNull(jwt);
+
+        if (jwt.RequireHttpsMetadata || isDevelopment)
+        {
+            return null;
+        }
+
+        var setting = $"'{JwtAuthenticationOptions.SectionName}:RequireHttpsMetadata' is false outside Development. ";
+
+        if (!jwt.AllowHttpMetadataOnPrivateNetwork)
+        {
+            return setting + "Signing keys fetched over plain HTTP can be replaced in transit; only local development "
+                + "may do that, or a private container network with AllowHttpMetadataOnPrivateNetwork set.";
+        }
+
+        var address = string.IsNullOrWhiteSpace(jwt.MetadataAddress) ? jwt.Authority : jwt.MetadataAddress;
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri)
+            || uri.HostNameType is not UriHostNameType.Dns
+            || uri.Host.Contains('.', StringComparison.Ordinal)
+            || uri.IsLoopback)
+        {
+            return setting + $"AllowHttpMetadataOnPrivateNetwork accepts only a single-label service name as the "
+                + $"metadata host (such as http://keycloak:8080/...), and '{address}' is not one.";
+        }
+
+        return null;
     }
 
     /// <summary>

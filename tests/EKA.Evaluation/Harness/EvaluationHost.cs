@@ -11,8 +11,8 @@ using EKA.Application.Conversations;
 using EKA.Application.Conversations.AskQuestion;
 using EKA.Application.Conversations.StartConversation;
 using EKA.Application.Documents.ExtractDocumentText;
-using EKA.Application.Documents.Indexing;
 using EKA.Application.Documents.IndexDocument;
+using EKA.Application.Documents.Indexing;
 using EKA.Application.Documents.Ingestion;
 using EKA.Application.Identity;
 using EKA.Application.Retrieval;
@@ -22,11 +22,11 @@ using EKA.Domain.Common;
 using EKA.Domain.Ingestion;
 using EKA.Domain.Prompting;
 using EKA.Infrastructure;
-using GroundedAnswers = EKA.Infrastructure.Persistence.Migrations.GroundedAnswers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using GroundedAnswers = EKA.Infrastructure.Persistence.Migrations.GroundedAnswers;
 
 namespace EKA.Evaluation.Harness;
 

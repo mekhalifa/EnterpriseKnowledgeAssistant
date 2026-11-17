@@ -1,5 +1,4 @@
 using EKA.Domain.Conversations;
-using EKA.Domain.Ingestion;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
 

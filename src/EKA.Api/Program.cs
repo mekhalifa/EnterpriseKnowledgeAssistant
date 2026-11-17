@@ -1,6 +1,7 @@
 using EKA.AI;
 using EKA.Api.Endpoints;
 using EKA.Api.Errors;
+using EKA.Api.Operations;
 using EKA.Api.Security;
 using EKA.Application;
 using EKA.Application.Abstractions;
@@ -9,6 +10,8 @@ using EKA.Application.Documents.Ingestion;
 using EKA.Application.Retrieval;
 using EKA.Application.Usage;
 using EKA.Infrastructure;
+using EKA.Infrastructure.Observability;
+using OpenTelemetry.Trace;
 
 // ─────────────────────────────────────────────────────────────────────────────────────
 // Composition root.
@@ -23,6 +26,17 @@ using EKA.Infrastructure;
 // ─────────────────────────────────────────────────────────────────────────────────────
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ── Observability (Step 14, ADR-0035) ───────────────────────────────────────────────
+//
+// Logs, traces and metrics, exported over OTLP when OTEL_EXPORTER_OTLP_ENDPOINT is set. The
+// request span is the root of every trace this process starts; probes are left out, because
+// a trace every ten seconds per probe is noise that buries the requests people make.
+builder.AddEkaTelemetry(
+    "eka-api",
+    tracing => tracing.AddAspNetCoreInstrumentation(options =>
+        options.Filter = context => !context.Request.Path.StartsWithSegments("/health", StringComparison.OrdinalIgnoreCase)),
+    EKA.AI.DependencyInjection.TelemetrySourceName);
 
 builder.Services.AddOpenApi();
 
@@ -138,6 +152,9 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // In containers: the environment variable Ai__ApiKey. Everything else in the "Ai" section
 // is ordinary configuration in appsettings.json. See ADR-0015.
 builder.Services.AddAi(builder.Configuration);
+
+// Step 14: identity metadata, EF model and connections paid for before /health/ready says yes.
+builder.Services.AddStartupWarmup();
 
 var app = builder.Build();
 

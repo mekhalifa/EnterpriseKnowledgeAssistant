@@ -7,6 +7,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- Step 14: request spans (ADR-0035) and rate-limit buckets shared through Redis (ADR-0036). -->
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="RedisRateLimiting.AspNetCore" />
+    <PackageReference Include="StackExchange.Redis" />
     <!--
       EF Core tooling, needed here because EKA.Api is the startup project that
       `dotnet ef` builds to discover the DbContext and its configuration.

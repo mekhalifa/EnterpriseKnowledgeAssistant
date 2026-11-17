@@ -1,0 +1,204 @@
+# The Enterprise Knowledge Assistant as a single-host deployment (Step 14, ADR-0034).
+#
+# Layered on docker-compose.yml, which provides SQL Server, Qdrant and Keycloak:
+#
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml up -d --build
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.app.yml ps
+#
+# Then: http://localhost:8088 (sign in as carol / local-dev-only)
+#       http://localhost:18888 (logs, traces, metrics; the login token is in `logs otel`)
+#
+# Needs deploy/.env with MSSQL_SA_PASSWORD, KEYCLOAK_ADMIN_PASSWORD, EKA_AI_API_KEY and
+# REDIS_PASSWORD (see .env.example). ClamAV downloads its signatures on first start, which takes
+# a few minutes; the worker waits for it.
+#
+# Only two ports are published, both on loopback: the web tier (8088) and the telemetry
+# dashboard (18888). The API, the worker, Redis and ClamAV are reachable only on the Compose
+# network, through the web tier's /api/ route.
+#
+# Its data is kept apart from a developer's `dotnet run` data on the same SQL Server and
+# Qdrant: its own database, vector collection and file volume. Stop any locally running API or
+# worker first; both would otherwise consume the same Hangfire queue... of another database,
+# which is harmless, but confusing in the logs.
+
+x-dotnet-environment: &dotnet-environment
+  # Production, not Development: no OpenAPI document, HTTPS metadata required unless the
+  # narrow private-network exception below applies, JSON logs.
+  DOTNET_ENVIRONMENT: Production
+  ASPNETCORE_ENVIRONMENT: Production
+  ConnectionStrings__EkaDatabase: Server=sqlserver,1433;Database=EkaDeployment;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True
+  VectorStore__Endpoint: http://qdrant:6334
+  VectorStore__CollectionName: eka_deployment_chunks
+  Ai__ApiKey: ${EKA_AI_API_KEY:?EKA_AI_API_KEY must be set in deploy/.env or the environment}
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel:18889
+  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+
+services:
+  # ── State ────────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:8.2.3-alpine
+    container_name: eka-redis
+    restart: unless-stopped
+    # Rate-limit buckets are worth seconds; nothing here needs to survive a restart, so no
+    # snapshots and no append-only file.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD must be set in deploy/.env}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  clamav:
+    # The malware scanner the worker calls before any parser runs (ADR-0032, ADR-0034).
+    image: clamav/clamav:1.5.1
+    container_name: eka-clamav
+    restart: unless-stopped
+    volumes:
+      # Signatures survive restarts, so a restart does not re-download ~300 MB.
+      - eka-clamdb:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # First start downloads the signature database before clamd listens.
+      start_period: 10m
+
+  # ── Release ──────────────────────────────────────────────────────────────────────────
+  migrate:
+    # Applies pending EF Core migrations, then exits. The API and worker start only after it
+    # succeeded, so no instance ever runs against a schema older than its code, and no two
+    # instances race to migrate (ADR-0034).
+    build:
+      context: ..
+      dockerfile: deploy/docker/dotnet.Dockerfile
+      target: migrator
+    image: eka/migrator:local
+    environment:
+      ConnectionStrings__EkaDatabase: Server=sqlserver,1433;Database=EkaDeployment;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: "no"
+
+  # ── Run ──────────────────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/docker/dotnet.Dockerfile
+      target: api
+    image: eka/api:local
+    # Two instances, deliberately: rate limits are only shared if something shares them, and
+    # a deployment that has never run two instances has never proved it can.
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+    environment:
+      <<: *dotnet-environment
+      ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD}
+      # Tokens name the issuer the browser used (127.0.0.1:8080); the API reads the same
+      # issuer's metadata over the container network. Plain HTTP is accepted only because the
+      # host is a Compose service name (AllowHttpMetadataOnPrivateNetwork, ADR-0034).
+      Authentication__Jwt__Authority: http://127.0.0.1:8080/realms/eka
+      Authentication__Jwt__MetadataAddress: http://keycloak:8080/realms/eka/.well-known/openid-configuration
+      Authentication__Jwt__RequireHttpsMetadata: "false"
+      Authentication__Jwt__AllowHttpMetadataOnPrivateNetwork: "true"
+      # Behind the web tier: trust its X-Forwarded-For / -Proto so logs show the client, not
+      # nginx. Safe only because the API port is published nowhere.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+    volumes:
+      - eka-files:/data/files
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Readiness, not liveness: Compose uses this to decide when the web tier may start. The
+      # image has bash but no curl; /dev/tcp is enough for one GET.
+      test:
+        - CMD-SHELL
+        - >-
+          bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080
+          && printf "GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3
+          && head -n 1 <&3 | grep -q " 200 "'
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/docker/dotnet.Dockerfile
+      target: worker
+    image: eka/worker:local
+    restart: unless-stopped
+    environment:
+      <<: *dotnet-environment
+      MalwareScanning__Scanner: ClamAv
+      MalwareScanning__Host: clamav
+      MalwareScanning__Port: "3310"
+    volumes:
+      - eka-files:/data/files
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_healthy
+      clamav:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/docker/web.Dockerfile
+      target: web
+    image: eka/web:local
+    container_name: eka-web
+    restart: unless-stopped
+    environment:
+      EKA_AUTH_AUTHORITY: http://127.0.0.1:8080/realms/eka
+      # Same origin: the page calls /api/..., which this container proxies to the API.
+      EKA_API_BASE_URL: ""
+    ports:
+      - "127.0.0.1:8088:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # /config.json exists only once nginx accepted its configuration AND the runtime-config
+      # script ran. Without a healthcheck `up --wait` reported this container "Healthy" while
+      # nginx was crash-looping on a bad config (Step 14 drill).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/config.json"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ── Observability ────────────────────────────────────────────────────────────────────
+  otel:
+    # The .NET Aspire dashboard, standalone: an OTLP endpoint plus a UI for logs, traces and
+    # metrics in one container. A learning and single-host choice; a real estate exports the
+    # same OTLP to a collector and a durable backend (ADR-0035). Keeps data in memory only.
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.1
+    container_name: eka-otel
+    restart: unless-stopped
+    environment:
+      # The UI asks for a token printed in this container's log (secure by default); OTLP is
+      # open, but only on the Compose network.
+      DASHBOARD__OTLP__AUTHMODE: Unsecured
+    ports:
+      - "127.0.0.1:18888:18888"
+
+volumes:
+  eka-files:
+    name: eka-files
+  eka-clamdb:
+    name: eka-clamdb

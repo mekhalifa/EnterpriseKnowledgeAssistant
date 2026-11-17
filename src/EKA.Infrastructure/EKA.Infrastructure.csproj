@@ -20,6 +20,12 @@
     <PackageReference Include="DocumentFormat.OpenXml" />
     <!-- Vector store adapter (Step 8). Also forbidden in EKA.Application. -->
     <PackageReference Include="Qdrant.Client" />
+    <!-- Telemetry shared by both hosts (Step 14, ADR-0035). Also forbidden in EKA.Application. -->
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.SqlClient" />
   </ItemGroup>
 
   <ItemGroup>

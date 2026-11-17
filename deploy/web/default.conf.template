@@ -1,0 +1,98 @@
+# The web tier (Step 14, ADR-0034): serves the Angular build and is the only way in to the API.
+#
+# One origin for page and API means no CORS at all in the deployment (the API's allowed-origin
+# list stays empty), and the Content-Security-Policy below can say connect-src 'self' plus the
+# identity provider and nothing else.
+#
+# This file is a template: the nginx entrypoint substitutes ${EKA_AUTH_ORIGIN} (derived from
+# EKA_AUTH_AUTHORITY by 10-eka-config.envsh) and nothing else. Only variables defined in the
+# environment are substituted, so nginx's own $uri, $host... pass through untouched.
+
+# Docker's embedded DNS. With a variable in proxy_pass, nginx re-resolves "api" every 10 s,
+# so API containers that are recreated (new IPs) or scaled (several IPs) are picked up
+# without restarting this one.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+server {
+    listen 8080;
+    server_name _;
+    server_tokens off;
+
+    root /usr/share/nginx/html;
+
+    # Just above Ingestion:MaxUploadBytes (25 MiB) plus multipart framing. The API enforces the
+    # real limit; this stops a 2 GB body before it reaches the API at all.
+    client_max_body_size 26m;
+
+    # ── Security headers: every response, the API's included ───────────────────────────
+    #
+    # The CSP is the main defence for tokens kept in sessionStorage (ADR-0033): even if some
+    # text were ever rendered as HTML, script-src 'self' allows no inline script, no eval and
+    # no foreign script, and connect-src limits where any script could send a stolen token.
+    #   style-src 'unsafe-inline': Angular and Material inject component styles at run time.
+    #     Injected CSS cannot run code; nonce-based styles are the upgrade if that is ever
+    #     judged insufficient.
+    #   connect-src: this origin (the API) and the identity provider (token, refresh).
+    #   frame-ancestors 'none': no one may frame this page (clickjacking).
+    # Add `upgrade-insecure-requests` and Strict-Transport-Security once TLS terminates in
+    # front of this server (release checklist).
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' ${EKA_AUTH_ORIGIN}; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    # The sign-in callback URL carries the authorization code: never leak it in a Referer.
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+
+    gzip on;
+    gzip_types application/javascript text/css application/json image/svg+xml;
+    gzip_min_length 1024;
+
+    # ── The API ───────────────────────────────────────────────────────────────────────
+    location /api/ {
+        set $api_upstream http://api:8080;
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+
+        # Server-sent events (the streamed answer, Step 13). With buffering on, nginx holds the
+        # response until a buffer fills, and the user sees the whole answer at once at the end:
+        # streaming silently turned off. Off for the whole API: its other responses are small.
+        proxy_buffering off;
+        proxy_cache off;
+        # An answer may take as long as the model's total timeout (Ai:Resilience, 3 min).
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    # ── Runtime configuration (written at container start by 40-runtime-config.sh) ─────
+    location = /config.json {
+        alias /tmp/eka/config.json;
+        default_type application/json;
+        expires -1;
+    }
+
+    # ── The client ────────────────────────────────────────────────────────────────────
+    # index.html is never cached: it names the hashed bundles, and a stale copy would load
+    # yesterday's code after a deploy.
+    location = /index.html {
+        expires -1;
+    }
+
+    # Hashed file names (outputHashing: all), so they can be cached for a year safely.
+    location ~* \.(?:js|css|woff2?|ttf|ico|svg|png|jpg|webp)$ {
+        expires 1y;
+        access_log off;
+        try_files $uri =404;
+    }
+
+    # Client-side routes (/chat, /documents, /auth/callback) are all index.html.
+    location / {
+        try_files $uri /index.html;
+        expires -1;
+    }
+}

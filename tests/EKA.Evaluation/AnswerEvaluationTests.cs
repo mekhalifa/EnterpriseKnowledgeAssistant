@@ -87,13 +87,13 @@ public sealed class AnswerEvaluationTests(ITestOutputHelper output)
         [
             (1, "Taxis are reimbursed only between 22:00 and 06:00, or when no public transport is available for the journey. Keep the receipt."),
         ];
-        const string question = "Can I take a taxi home after a late meeting?";
+        const string Question = "Can I take a taxi home after a late meeting?";
 
-        var supported = await judge.JudgeAsync(question,
+        var supported = await judge.JudgeAsync(Question,
             "Taxis are reimbursed between 22:00 and 06:00, or when no public transport is available [1].", taxis);
-        var overreach = await judge.JudgeAsync(question,
+        var overreach = await judge.JudgeAsync(Question,
             "Yes, you can take a taxi home after a late meeting, as taxis are reimbursed between 22:00 and 06:00 or when no public transport is available [1].", taxis);
-        var unsupported = await judge.JudgeAsync(question,
+        var unsupported = await judge.JudgeAsync(Question,
             "Yes, taxis are always reimbursed up to 50 euros per ride [1].", taxis);
 
         output.WriteLine($"supported:   {supported}");

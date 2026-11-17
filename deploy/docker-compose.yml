@@ -1,8 +1,9 @@
 # Local development dependencies for the Enterprise Knowledge Assistant.
 #
-# SQL Server since Step 3, Qdrant since Step 8, Keycloak since Step 12. The API and
-# worker containers in Step 14 — each added when something actually uses it, so
-# `docker compose up` never starts services that do nothing.
+# SQL Server since Step 3, Qdrant since Step 8, Keycloak since Step 12. The application
+# itself (API, worker, web, Redis, ClamAV, telemetry) is the second file,
+# docker-compose.app.yml (Step 14), layered on top of this one. This file alone is what a
+# developer running the API from an IDE needs.
 #
 # Usage:
 #   cd deploy
@@ -94,6 +95,10 @@ services:
       # Fixes the issuer the tokens carry, so it equals Authentication:Jwt:Authority in
       # appsettings.Development.json whatever address the request used.
       KC_HOSTNAME: http://127.0.0.1:8080
+      # Step 14: back-channel URLs (keys, token endpoint) follow the address a request used.
+      # The containerized API reads metadata from http://keycloak:8080 and must be sent to
+      # http://keycloak:8080 for the keys too; the issuer in tokens stays KC_HOSTNAME.
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HEALTH_ENABLED: "true"
     ports:
       - "127.0.0.1:8080:8080"
