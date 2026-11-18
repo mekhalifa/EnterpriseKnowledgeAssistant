@@ -32,6 +32,12 @@ Each step document records what we built, why, the best option, and the alternat
 | 13 | [step-13-angular-client.md](steps/step-13-angular-client.md) — client in [src/EKA.Web](../src/EKA.Web/) | ✅ Complete |
 | 14 | [step-14-deployment.md](steps/step-14-deployment.md) — [release checklist and runbook](operations/release-checklist.md) | ✅ Complete |
 
+Post-MVP work, after the learning path. Same format, numbered separately.
+
+| # | Document | Status |
+|---|---|---|
+| post-01 | [post-01-database-outage-signals.md](steps/post-01-database-outage-signals.md) — 503 for an unreachable database, bounded readiness | ✅ Complete |
+
 ## ADRs — the decisions
 
 Short records of each architectural decision, its consequences, and what we rejected.
@@ -74,6 +80,7 @@ Short records of each architectural decision, its consequences, and what we reje
 | [0034](adr/0034-single-host-compose-deployment.md) | Single-host Compose deployment, release shape, CSP edge, ClamAV | Accepted |
 | [0035](adr/0035-opentelemetry-without-serilog.md) | OpenTelemetry without Serilog | Accepted |
 | [0036](adr/0036-shared-rate-limits-with-local-fallback.md) | Shared rate limits in Redis with a local fallback | Accepted |
+| [0037](adr/0037-database-unavailable-is-503-bounded-readiness.md) | An unreachable database is a 503; readiness checks are time-bounded | Accepted |
 
 ## Project skills
 

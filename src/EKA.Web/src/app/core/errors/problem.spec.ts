@@ -17,6 +17,15 @@ describe('describeProblem', () => {
     expect(describeProblem(502, { code: 'ai.unavailable' }).message).toContain('Nothing was saved');
   });
 
+  it('does not blame the AI service when the database is what is unavailable', () => {
+    const error = describeProblem(503, { code: 'database.unavailable', traceId: '00-db' });
+
+    expect(error.message).not.toContain('AI');
+    expect(error.message).not.toContain('Nothing was saved');
+    expect(error.retryable).toBe(true);
+    expect(error.traceId).toBe('00-db');
+  });
+
   it('shows the first validation message, which names what to fix', () => {
     const error = describeProblem(400, { errors: { Question: ['A question is required.'] } });
 

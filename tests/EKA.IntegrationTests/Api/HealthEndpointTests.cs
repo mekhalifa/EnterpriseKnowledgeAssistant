@@ -1,5 +1,10 @@
 using System.Net;
 using System.Text.Json;
+using EKA.Application.Common;
+using EKA.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Shouldly;
 
 namespace EKA.IntegrationTests.Api;
@@ -96,17 +101,45 @@ public sealed class HealthEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Readiness_fails_when_the_database_is_unreachable()
+    public async Task Readiness_answers_promptly_and_names_the_database_when_it_cannot_be_reached()
     {
-        // A connection string pointing at a port with nothing behind it, so the check has
-        // something real to fail against rather than a mocked failure.
+        // An address nothing answers (a hung connect, like a host that dropped off the network)
+        // with a 30 s connect timeout, so only the check's own bound can end the wait. Before
+        // that bound this probe waited out the connect timeout: the Step 14 drill saw no
+        // answer within 15 s, and Compose's probe gives up after 5 s (step-14 §6.7).
         using var broken = new EkaApiFactory(
-            "Server=127.0.0.1,1;Database=nothing;User Id=sa;Password=nope;"
-            + "TrustServerCertificate=True;Connect Timeout=2");
+            "Server=10.255.255.1,1433;Database=nothing;User Id=sa;Password=nope;"
+            + "TrustServerCertificate=True;Connect Timeout=30");
+        var client = broken.CreateAnonymousClient();
 
-        var response = await broken.CreateAnonymousClient().GetAsync("/health/ready");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var response = await client.GetAsync("/health/ready");
+        watch.Stop();
 
         response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+
+        // The bound is 5 s; the rest is slack for a loaded machine, still well under 30 s.
+        watch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(10));
+
+        var checks = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement
+            .GetProperty("checks").EnumerateArray().ToList();
+        checks.ShouldContain(check =>
+            check.GetProperty("name").GetString() == DependencyInjection.SqlServerCheckName
+            && check.GetProperty("status").GetString() == "Unhealthy");
+    }
+
+    [Fact]
+    public void Every_readiness_check_has_a_time_bound()
+    {
+        // The test above proves the bound where an unroutable address hangs. On a network that
+        // rejects it at once the test would pass without one, so the configuration is asserted
+        // too. The warm-up gate reads a flag and needs no bound.
+        var registrations = _factory.Services.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations
+            .Where(registration => registration.Tags.Contains(HealthTags.Ready) && registration.Name != "warm-up")
+            .ToList();
+
+        registrations.Select(registration => registration.Name).ShouldBe(["sql-server", "qdrant"], ignoreOrder: true);
+        registrations.ShouldAllBe(registration => registration.Timeout == DependencyInjection.ReadinessCheckTimeout);
     }
 
     [Fact]

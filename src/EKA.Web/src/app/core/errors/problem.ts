@@ -67,6 +67,11 @@ export function describeProblem(status: number, problem: Problem | null, retryAf
   if (status === 409) {
     return { message: problem?.detail ?? 'That conflicts with the current state. Refresh and try again.', retryable: false, traceId };
   }
+  if (status === 503 && code === 'database.unavailable') {
+    // Not "nothing was saved": a write can fail after the database committed it, so the client
+    // cannot promise that. Retrying a read is always safe; a repeated upload is idempotent.
+    return { message: 'The service is temporarily unavailable. Try again in a moment.', retryable: true, traceId };
+  }
   if (status === 502 || status === 503 || status === 504) {
     return {
       message: 'The AI service is not responding right now. Nothing was saved; try again in a moment.',

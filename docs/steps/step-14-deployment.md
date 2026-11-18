@@ -223,6 +223,7 @@ It was caught before the build and moved up a level.
   waits out the connect timeout, so the probe fails by timing out rather than by answering
   503. The outcome is the same and slower. A per-check timeout (`HealthCheckRegistration.Timeout`)
   would make it fast.
+  *Both fixed after the learning path: [post-01](post-01-database-outage-signals.md), ADR-0037.*
 - **The Step 13 ledger timeout did not reproduce.** 8 simultaneous uploads from one tenant
   all completed in 23 s with no failed attempt. That isn't proof it can't happen; it's recorded
   as not reproduced.

@@ -62,6 +62,7 @@ useful as the current belief.
 | [0034](0034-single-host-compose-deployment.md) | Single-host Compose deployment: migration job, readiness, CSP edge, ClamAV, locked restore | Accepted | 2026-11-17 |
 | [0035](0035-opentelemetry-without-serilog.md) | OpenTelemetry for logs, traces and metrics, without Serilog | Accepted | 2026-11-17 |
 | [0036](0036-shared-rate-limits-with-local-fallback.md) | Rate-limit buckets in Redis, per-process fallback when it is down | Accepted | 2026-11-17 |
+| [0037](0037-database-unavailable-is-503-bounded-readiness.md) | An unreachable database is a 503, recognised structurally; readiness checks are time-bounded | Accepted | 2026-11-18 |
 
 ## Template
 

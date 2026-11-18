@@ -74,6 +74,9 @@ builder.Services.AddProblemDetails(options =>
 builder.Services.AddExceptionHandler<BadRequestExceptionHandler>();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
 
+// An unreachable database is temporary, so 503, not the fallback's 500 (post-MVP; step-14 §6.7).
+builder.Services.AddExceptionHandler<DatabaseUnavailableExceptionHandler>();
+
 // ── Identity ────────────────────────────────────────────────────────────────────────
 
 builder.Services.AddHttpContextAccessor();

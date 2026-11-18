@@ -17,6 +17,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Qdrant.Client;
@@ -43,6 +44,20 @@ public static class DependencyInjection
     /// <summary>Configuration key holding the SQL Server connection string.</summary>
     public const string ConnectionStringName = "EkaDatabase";
 
+    /// <summary>The readiness check that reports on SQL Server.</summary>
+    public const string SqlServerCheckName = "sql-server";
+
+    /// <summary>
+    /// How long one dependency check on <c>/health/ready</c> may take before it reports
+    /// Unhealthy.
+    /// </summary>
+    /// <remarks>
+    /// The checks run in parallel, so this is also roughly the longest the whole probe takes.
+    /// It must stay under the orchestrator's probe timeout (5 s in the Compose deployment):
+    /// a probe that times out tells the orchestrator only that it got no answer, while a 503
+    /// names the failing dependency. A healthy SQL Server answers in milliseconds.
+    /// </remarks>
+    public static readonly TimeSpan ReadinessCheckTimeout = TimeSpan.FromSeconds(5);
 
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
@@ -100,7 +115,16 @@ public static class DependencyInjection
         // The tag is what /health/ready filters on; an untagged check would run on neither
         // probe and quietly never execute.
         services.AddHealthChecks()
-            .AddDbContextCheck<EkaDbContext>(name: "sql-server", tags: [HealthTags.Ready]);
+            .AddDbContextCheck<EkaDbContext>(name: SqlServerCheckName, tags: [HealthTags.Ready]);
+
+        // A time bound, which AddDbContextCheck has no parameter for, though its registration
+        // does. Without it the check waits out SqlClient's 15 s connect timeout, plus EF's retry
+        // back-off for errors EF retries: the Step 14 drill saw the probe give no answer
+        // within 15 s while SQL Server was down. SqlClient honours the cancellation this sets
+        // (a hung connect stops at the bound), so the probe answers 503, naming the check.
+        services.Configure<HealthCheckServiceOptions>(options =>
+            options.Registrations.Single(registration => registration.Name == SqlServerCheckName)
+                .Timeout = ReadinessCheckTimeout);
 
         services.AddScoped<IDocumentRepository, DocumentRepository>();
         services.AddScoped<IConversationRepository, ConversationRepository>();
@@ -230,7 +254,7 @@ public static class DependencyInjection
         // Step 14: Qdrant joins SQL Server on the readiness probe. A timeout, because a probe
         // that hangs is worse than one that fails: the orchestrator learns nothing either way.
         services.AddHealthChecks()
-            .AddCheck<QdrantHealthCheck>("qdrant", tags: [HealthTags.Ready], timeout: TimeSpan.FromSeconds(5));
+            .AddCheck<QdrantHealthCheck>("qdrant", tags: [HealthTags.Ready], timeout: ReadinessCheckTimeout);
     }
 
     /// <summary>

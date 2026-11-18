@@ -2,10 +2,10 @@
 
 Single source of truth for project state. Updated at the end of every working session.
 
-**Last updated:** 2026-11-17
-**Current step:** Step 14 complete: **the learning path is finished**
+**Last updated:** 2026-11-18
+**Current step:** Learning path finished (14 of 14); post-MVP work under way (post-01 done)
 **Overall:** 14 of 14 steps done
-**Branch:** `step-14-deployment` (branched from `step-13-angular-client`; none merged to `main`)
+**Branch:** `post-mvp-resilience` (branched from `step-14-deployment`; none merged to `main`)
 
 ---
 
@@ -17,11 +17,10 @@ none of it is a learning-path step.
 1. **Tier-2 evaluation (≈ 5 cents, when the key has credit).** The three-vote judge calibration
    has not yet passed against the real model (step-11 §5.4), and it is release-checklist item
    A1.8: `$env:EKA_EVAL_ANSWERS="1"; dotnet test tests/EKA.Evaluation --filter Category=Evaluation`.
-2. **Merge strategy.** Fourteen stacked branches, none merged to `main`. Decide: merge the
-   stack into `main` as is (history kept), or squash per step.
-3. **Two small resilience fixes found by the Step 14 drills** (step-14 §6.7): map a database
-   connectivity failure to 503, not 500; give the readiness checks a timeout so a dead SQL
-   Server is reported in a second, not after the connect timeout.
+2. **Merge strategy.** Fifteen stacked branches now (this one included), none merged to `main`.
+   Decide: merge the stack into `main` as is (history kept), or squash per step.
+3. **Re-drill A4.6 on the Compose stack** (optional, minutes): stop `eka-sqlserver`, expect reads
+   `503 database.unavailable` and readiness `503` within 5 s. Proved by integration tests only.
 4. **Before anyone but the owner uses it:** [release checklist](operations/release-checklist.md)
    Part B (TLS, a real identity provider, no password grant, least-privilege SQL, Qdrant key,
    secret store, data-processor approval, durable telemetry, backups). Each item needs its own
@@ -501,6 +500,26 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 6. Readiness probes flooded the API's logs with `SELECT 1`; EF commands at Warning outside
    Development.
 
+### Session 6 — 2026-11-18 (post-MVP)
+
+#### Post-01 — Honest signals during a database outage ✅
+
+- Chosen with the owner: item 3 of the post-MVP list (step-14 §6.7).
+- **Measured first** (Windows and a Linux container): the delay is SqlClient's 15 s connect
+  timeout, not EF retries. A cancelled token stops a hung connect. A refused connection is
+  `SqlException` 1225 on Windows but **0 on Linux**, and `IsTransient` is false everywhere.
+- `SqlServerFailures.IsUnavailable` (Infrastructure): structural rule. A `SqlException` wrapping
+  `SocketException`/`Win32Exception` counts, as do `RetryLimitExceededException` and `IsTransient`.
+  A failed login and a failing query stay 500.
+- `DatabaseUnavailableExceptionHandler` → `503 database.unavailable`. The client says
+  "temporarily unavailable", no longer "the AI service".
+- `sql-server` readiness check bounded at `ReadinessCheckTimeout` (5 s), shared with Qdrant. The
+  probe answers in 5 s against a hung connect that used to take 30 s.
+- Decided: [ADR-0037](adr/0037-database-unavailable-is-503-bounded-readiness.md).
+- **735 .NET tests run green** (+6 classifier against real failed connections, +2 end-to-end 503,
+  +1 time-bound guard; one readiness test now asserts time), **32 client tests**. All four guarding
+  tests were shown to fail with the fixes removed. Write-up: [post-01](steps/post-01-database-outage-signals.md).
+
 ---
 
 ## Step checklist
@@ -603,9 +622,11 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 - **The deployment is one host, plain HTTP, development-mode Keycloak, `sa` for SQL.**
   Acceptable only on loopback; the [release checklist](operations/release-checklist.md)
   Part B lists everything that blocks exposure.
-- **A database outage surfaces as 500, not 503,** and the readiness probe answers slowly while
-  SQL Server is down (its check waits out the connect timeout). Outcome correct, signal poor
-  (step-14 §6.7).
+- **The first request of a database outage waits for the connect timeout** (up to 15 s) before
+  its 503; SqlClient's pool then fails new opens fast for about 5 s. A circuit breaker would
+  remove the wait (ADR-0037).
+- **"Unavailable" includes a mistyped database hostname** (any OS network error is classified
+  as unreachable), so that misconfiguration reads as 503. Readiness fails too, so it stays visible.
 - **Every `docker compose` command over the app file needs `EKA_AI_API_KEY` set,** even `ps`
   and `logs` (runbook).
 - **Telemetry lives in memory** (Aspire dashboard): gone when the container restarts.
@@ -670,7 +691,8 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 - **Groups overage** (Entra sends a Graph pointer instead of >200 groups) yields no groups:
   less access, never more. Resolved with the identity provider in Step 12.
 - **A Qdrant outage during search is a 500**, not a mapped 503; uploads and the rest of the API
-  are unaffected.
+  are unaffected. The database got its 503 in post-01; Qdrant would follow the same pattern
+  (`RpcException` with `StatusCode.Unavailable`).
 - **`ListAsync` uses offset paging**, so a deep page scans and discards, and an insert
   between two requests can shift a row across a page boundary. Correct for a page-numbered
   UI; revisit if a tenant's document count reaches the thousands.
