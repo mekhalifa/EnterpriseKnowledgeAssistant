@@ -47,10 +47,17 @@ public sealed class ChatOptions
     /// <b>The same words whether nothing exists or the caller may not see it.</b> "There is a
     /// document but you lack access" would confirm that a restricted document covers the
     /// question, which is exactly the kind of fact access control exists to protect.
+    /// <para>
+    /// <b>It also says what the assistant is for</b> (2026-11-18). A question about the assistant
+    /// itself ("what can you help with?") matches no document and lands here, so this is where a
+    /// new user learns how to use it. Chosen over detecting such questions before retrieval,
+    /// which would skip the search for any real question it misclassified.
+    /// </para>
     /// </remarks>
     public string NoEvidenceAnswer { get; set; } =
-        "I couldn't find anything in the documents available to you that answers this question. "
-        + "Try rephrasing it, or check with the team that owns the policy.";
+        "I couldn't find anything in the documents available to you that answers this. "
+        + "I answer questions from your organization's documents, such as policies and procedures, "
+        + "and show the source of every answer. Try asking about a specific topic, or rephrase your question.";
 }
 
 internal sealed class ChatOptionsValidator : IValidateOptions<ChatOptions>

@@ -26,6 +26,14 @@ h2 {
   margin: 0;
   display: grid;
   gap: 8px;
+  border-radius: 8px;
+
+  // Shown when "Show sources" moves focus here, mouse or keyboard alike: on a wide screen the
+  // list was already visible, so the outline is what shows that the click did something.
+  &:focus {
+    outline: 2px solid var(--mat-sys-primary);
+    outline-offset: 4px;
+  }
 }
 
 li {

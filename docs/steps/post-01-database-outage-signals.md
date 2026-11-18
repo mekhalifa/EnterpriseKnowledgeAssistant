@@ -154,14 +154,40 @@ With the fixes restored, all passed.
 
 ---
 
-## 7. What is still true (recorded in PROGRESS)
+## 7. The drill on the deployed stack, and what it corrected
 
-- The **first** request of an outage waits for the connect timeout (up to 15 s) before its 503.
+Release-checklist drill A4.6, re-run on 2026-11-18 with this build (two API replicas behind nginx):
+
+| | Before (Step 14) | After |
+|---|---|---|
+| Read through the edge, SQL Server stopped | 500 | **503 `database.unavailable`**: no host and no exception text in the body, trace id present |
+| `/health/ready`, each replica | no answer within 15 s | **503 in 5,012 ms and 5,005 ms** |
+| Restarts | 0 | 0 |
+| Recovery after `docker start` | first read 200 | first 200 about 30 s after SQL Server reported healthy, no restart |
+
+**What the drill caught that the tests didn't: the wait before the 503 was 66 s and 38 s**, not
+"up to 15 s" as first written here and in ADR-0037. The log gave the reason:
+
+- In Compose, a stopped container's name stops resolving. SqlClient reports error **11001** ("Name
+  or service not known").
+- That number is in EF's transient list, unlike the refused port of §2.
+- So EF retried five times with back-off, then threw `RetryLimitExceededException`. The
+  classifier's branch for that exception handled it, now proved on the real deployment.
+
+My experiment measured a refused port and a `.invalid` name (11002, *not* retried). Neither was
+the failure the deployment actually produces. The lesson is the same as in §2, one level
+further: measure on the topology where it happens, not only on the OS.
+
+The answer is correct; the wait is the cost. A circuit breaker, or a smaller retry budget for
+reads, would shorten it (ADR-0037, alternatives).
+
+## 7a. What is still true (recorded in PROGRESS)
+
+- A request during a Compose database outage waits **40–70 s** before its 503 (EF retries 11001).
+- Recovery lags SQL Server's own healthcheck by tens of seconds: database recovery, plus requests
+  still inside a retry loop.
 - A Qdrant outage during search is still a 500.
 - A failure after an answer stream has started stays an `error` event; the status is already sent.
-- Not re-run as a drill on the Compose stack. The integration tests reproduce the failure modes,
-  and the Linux exception shapes were measured in a container, but release-checklist drill A4
-  has not been repeated with this build.
 
 ---
 

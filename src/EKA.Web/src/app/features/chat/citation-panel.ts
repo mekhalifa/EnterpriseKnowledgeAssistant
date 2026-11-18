@@ -1,13 +1,20 @@
 import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, ElementRef, effect, inject, input } from '@angular/core';
 import { MessageResponse } from '../../core/api/api';
-import { Grounding, groundingOf } from './conversation-store';
+import { CitationSelection, Grounding, groundingOf } from './conversation-store';
 
 /**
  * The sources behind one answer: which document, where in it, and how closely it matched.
  *
  * When a marker is chosen, its citation is highlighted and receives focus, so a keyboard or
- * screen-reader user lands on the source rather than having to find it.
+ * screen-reader user lands on the source rather than having to find it. "Show sources" (a
+ * selection without a number) moves focus to the whole list the same way.
+ *
+ * It reacts to each *selection*, not to the selected number. Every click makes a new selection
+ * object, so choosing the same marker twice, or "Show sources" for the answer already on
+ * display, still brings the panel into view. Reacting to the number alone made both clicks do
+ * nothing visible, and on a narrow screen, where the panel sits below the conversation, the
+ * button looked broken (post-01 follow-up).
  */
 @Component({
   selector: 'app-citation-panel',
@@ -18,12 +25,12 @@ import { Grounding, groundingOf } from './conversation-store';
     @if (message(); as answer) {
       <p class="grounding" [attr.data-grounding]="grounding()">{{ groundingText() }}</p>
       @if (answer.citations.length > 0) {
-        <ol class="citations" aria-labelledby="sources-heading">
+        <ol class="citations" aria-labelledby="sources-heading" tabindex="-1" data-testid="citations">
           @for (citation of answer.citations; track citation.number) {
             <li
               tabindex="-1"
               [id]="'citation-' + citation.number"
-              [class.selected]="citation.number === selected()"
+              [class.selected]="citation.number === selection()?.number"
               [attr.data-testid]="'citation-' + citation.number"
             >
               <span class="number" aria-hidden="true">{{ citation.number }}</span>
@@ -53,19 +60,21 @@ export class CitationPanel {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
   readonly message = input<MessageResponse | null>(null);
-  readonly selected = input<number | null>(null);
+  readonly selection = input<CitationSelection | null>(null);
 
   constructor() {
     effect(() => {
-      const number = this.selected();
-      if (number === null) {
+      const selection = this.selection();
+      if (selection === null) {
         return;
       }
-      // After this change has rendered the highlighted item.
+      // After this change has rendered the panel's new content and the highlighted item.
       queueMicrotask(() => {
-        const item = this.host.nativeElement.querySelector<HTMLElement>(`#citation-${number}`);
-        item?.focus();
-        item?.scrollIntoView?.({ block: 'nearest' });
+        const target = this.host.nativeElement.querySelector<HTMLElement>(
+          selection.number === null ? '.citations' : `#citation-${selection.number}`,
+        );
+        target?.focus({ preventScroll: true });
+        target?.scrollIntoView?.({ block: selection.number === null ? 'start' : 'nearest' });
       });
     });
   }

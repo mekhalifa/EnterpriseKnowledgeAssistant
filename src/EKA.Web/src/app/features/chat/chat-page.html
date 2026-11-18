@@ -115,7 +115,7 @@
   <aside class="sources" aria-labelledby="sources-heading">
     <app-citation-panel
       [message]="store.citedMessage()"
-      [selected]="store.selection()?.number ?? null"
+      [selection]="store.selection()"
     />
   </aside>
 </div>

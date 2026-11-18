@@ -54,9 +54,14 @@ Measurements taken before deciding (SqlClient 6.1.7, EF Core 10.0.15; [post-01](
 
 ### Negative / costs we accept
 
-- **A request during an outage still waits for the connect timeout** (up to 15 s) before its
-  503. Only SqlClient's pool *blocking period* (about 5 s after a failure) makes later requests
-  fail fast. A circuit breaker would fix this; see below.
+- **A request during an outage waits before its 503: 40–70 s on the Compose stack.** *Corrected
+  on 2026-11-18 by the drill on the deployed stack; the first version of this ADR said "up to
+  15 s".* That figure was right for a refused port, which EF does not retry. In Compose, though, a
+  stopped `sqlserver` container makes its name unresolvable (error 11001). That error *is* in EF's
+  transient list, so the request waits through five retries with back-off and ends in
+  `RetryLimitExceededException`. Measured: 66 s and 38 s. SqlClient's pool *blocking period*
+  doesn't shorten this, because each retry waits out its back-off. A circuit breaker, or a
+  shorter retry budget for reads, would fix it; see below.
 - **The rule is broad.** Any network-level error counts, including a misconfigured hostname, which
   is our fault but now reads as "temporarily unavailable". The readiness probe fails in both
   cases, so the misconfiguration stays visible.
@@ -69,7 +74,7 @@ Measurements taken before deciding (SqlClient 6.1.7, EF Core 10.0.15; [post-01](
 | Option | Wins when |
 |---|---|
 | A list of `SqlException` numbers (EF's transient list or our own) | Only one platform matters and every number has been measured on it. Linux reports `0` for "refused", so a list misses the commonest case here |
-| A circuit breaker on database calls, failing fast while open | Request volume during an outage is high enough that 15 s waits exhaust threads or connections. On one host with a handful of users it is machinery without a measured need |
+| A circuit breaker on database calls, failing fast while open | Request volume during an outage is high enough that 40–70 s waits exhaust threads or connections, or users notice them. On one host with a handful of users it is machinery without a measured need; the corrected wait makes this the first thing to revisit |
 | A `Result` error from every repository | Callers could do something useful with "unavailable". None can; it adds a branch to every use case for an edge mapping |
 | A custom readiness check opening a raw connection, bypassing EF's retry strategy | The probe should test something other than "EF can connect". The timeout already bounds retries; the maintained check also builds the EF model that warm-up relies on |
 | A shorter `Connect Timeout` in the connection string | Every query, not only the probe, should give up sooner. It would also cut requests short during a slow failover, which the retry strategy exists to survive |

@@ -19,8 +19,9 @@ none of it is a learning-path step.
    A1.8: `$env:EKA_EVAL_ANSWERS="1"; dotnet test tests/EKA.Evaluation --filter Category=Evaluation`.
 2. **Merge strategy.** Fifteen stacked branches now (this one included), none merged to `main`.
    Decide: merge the stack into `main` as is (history kept), or squash per step.
-3. **Re-drill A4.6 on the Compose stack** (optional, minutes): stop `eka-sqlserver`, expect reads
-   `503 database.unavailable` and readiness `503` within 5 s. Proved by integration tests only.
+3. **Shorten the wait before a database-outage 503** (40–70 s on the Compose stack, measured;
+   post-01 §7). Options in ADR-0037: a circuit breaker, or a smaller retry budget for reads. Needs
+   a decision, not just code.
 4. **Before anyone but the owner uses it:** [release checklist](operations/release-checklist.md)
    Part B (TLS, a real identity provider, no password grant, least-privilege SQL, Qdrant key,
    secret store, data-processor approval, durable telemetry, backups). Each item needs its own
@@ -519,6 +520,22 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 - **735 .NET tests run green** (+6 classifier against real failed connections, +2 end-to-end 503,
   +1 time-bound guard; one readiness test now asserts time), **32 client tests**. All four guarding
   tests were shown to fail with the fixes removed. Write-up: [post-01](steps/post-01-database-outage-signals.md).
+- **Re-drilled A4.6 on the Compose stack:** reads 503, readiness 503 in 5.0 s on both replicas,
+  0 restarts, recovered without restart. **Found:** each read waited 66 s and 38 s before its 503.
+  In Compose a stopped container's name fails to resolve (11001), which EF retries five times.
+  The first write-up had said "up to 15 s"; ADR-0037 and post-01 are corrected.
+
+#### Found while using the app (carol), same session
+
+- **"Show N sources" did nothing visible.** The panel reacted to the citation *number*, and "show
+  all" has none (a repeated marker click had the same flaw). It now reacts to each selection:
+  focus and scroll to the list (outlined) or to the citation. `citation-panel.spec.ts` added (the
+  panel had no test). Client: 35 tests.
+- **"What can you help with?" got a bare refusal.** By design no document matches it (no-evidence,
+  no model call). The no-evidence reply now also says what the assistant does. It still uses the
+  same words whether nothing exists or access is denied (`ChatOptions.NoEvidenceAnswer`). Rejected:
+  detecting such questions before retrieval, which would skip the search for any real question it
+  misclassified.
 
 ---
 
@@ -622,9 +639,9 @@ indexing (not reproduced: 10 concurrent MERGEs < 100 ms); API cold start ~20 s. 
 - **The deployment is one host, plain HTTP, development-mode Keycloak, `sa` for SQL.**
   Acceptable only on loopback; the [release checklist](operations/release-checklist.md)
   Part B lists everything that blocks exposure.
-- **The first request of a database outage waits for the connect timeout** (up to 15 s) before
-  its 503; SqlClient's pool then fails new opens fast for about 5 s. A circuit breaker would
-  remove the wait (ADR-0037).
+- **A request during a database outage waits 40–70 s before its 503** on the Compose stack (EF
+  retries the DNS failure of a stopped container five times; measured 66 s and 38 s). Correct
+  answer, slow. A circuit breaker or a smaller read retry budget would fix it (ADR-0037).
 - **"Unavailable" includes a mistyped database hostname** (any OS network error is classified
   as unreachable), so that misconfiguration reads as 503. Readiness fails too, so it stays visible.
 - **Every `docker compose` command over the app file needs `EKA_AI_API_KEY` set,** even `ps`
