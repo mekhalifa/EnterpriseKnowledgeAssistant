@@ -25,7 +25,8 @@ none of it is a learning-path step.
 4. **Before anyone but the owner uses it:** [release checklist](operations/release-checklist.md)
    Part B (TLS, a real identity provider, no password grant, least-privilege SQL, Qdrant key,
    secret store, data-processor approval, durable telemetry, backups). Each item needs its own
-   decision; several need an ADR.
+   decision; several need an ADR. Every dev key and address, and what replaces it:
+   [configuration-dev-to-production](operations/configuration-dev-to-production.md).
 
 Reference: [steps/step-14](steps/step-14-deployment.md), [operations/release-checklist](operations/release-checklist.md),
 [adr/0034](adr/0034-single-host-compose-deployment.md).

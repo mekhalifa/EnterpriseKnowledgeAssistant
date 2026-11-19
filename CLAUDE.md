@@ -167,6 +167,7 @@ Versions live in `Directory.Packages.props` under `$(MicrosoftRuntimeVersion)`.
 | [docs/steps/](docs/steps/) | Full teaching write-up for each completed step |
 | [docs/adr/](docs/adr/) | Architecture Decision Records — what we chose and why |
 | [docs/concepts/](docs/concepts/) | Reference material: Clean Architecture, DDD, SOLID, patterns |
+| [docs/operations/running-locally.md](docs/operations/running-locally.md) | How to run the system in development (local processes or full Docker) |
 | [docs/security/threat-model.md](docs/security/threat-model.md) | Assets, boundaries, OWASP LLM Top 10 mapping, accepted risks |
 | [.claude/skills/](.claude/skills/) | Project skills — the repeatable workflows below |
 
